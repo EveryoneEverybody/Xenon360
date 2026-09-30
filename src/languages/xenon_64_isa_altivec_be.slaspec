@@ -1,0 +1,35 @@
+# Xbox 360 Xenon PowerPC language based on Ghidra's PowerPC language.
+# Language ID: PowerPC:BE:64:Xenon-VMX128-32addr.
+
+@define ENDIAN "big"
+
+@define IS_ISA "1"
+@define NoLegacyIntegerMultiplyAccumulate "1"
+
+@define REGISTER_SIZE "8"
+@define BIT_64 "64"
+
+@define EATRUNC "ea"
+
+@define CTR_OFFSET "32"
+
+@include "ppc_common.sinc"
+@include "ppc_isa.sinc"
+
+@include "ppc_a2.sinc"
+@include "quicciii.sinc"
+@include "FPRC.sinc"
+
+# The build creates xenon_altivec.sinc from Ghidra's stock altivec.sinc and
+# removes only constructors whose later PowerISA encodings are proven to
+# collide with Xenon VMX128 encodings.
+@include "xenon_altivec.sinc"
+
+# VMX128 extensions are included last so their additional vector-register
+# namespace and instruction forms are available only in this language variant.
+@include "xenon_vmx128.sinc"
+@include "xenon_vmx128_phase2.sinc"
+@include "xenon_vmx128_phase3.sinc"
+@include "xenon_vmx128_phase4.sinc"
+@include "xenon_vmx128_phase5.sinc"
+@include "xenon_vmx128_phase6.sinc"

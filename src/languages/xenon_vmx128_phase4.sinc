@@ -1,0 +1,136 @@
+# Additional Xbox 360 Xenon VMX128 arithmetic, comparison, rounding,
+# conversion, and partial vector-memory forms.
+#
+# Straightforward operations reuse Ghidra's existing AltiVec p-code semantics.
+# Partial vector-right memory behavior remains an explicit Xenon userop rather
+# than guessed semantics.
+
+define pcodeop xenon_lvrx_partial;
+
+# VX128 arithmetic/logical forms.
+:vandc128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=9 & XENON_BIT_4=1
+{
+    xvD = vectorLogicalAndWithComplement(xvA,xvB);
+}
+
+# Xenon encodes the old destination as the third arithmetic input:
+# VD = -((VA * VD) - VB)
+:vnmsubfp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=5 & XENON_BIT_4=1
+{
+    xvD = vectorNegativeMultiplySubtractFloatingPoint(xvA,xvD,xvB);
+}
+
+:vnor128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=10 & XENON_BIT_4=1
+{
+    xvD = ~(xvA | xvB);
+}
+
+:vslo128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=14 & XENON_BIT_4=1
+{
+    xvD = vectorShiftLeftByOctet(xvA,xvB);
+}
+
+:vupklsb128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_6_9=15 & XENON_BIT_4=0
+{
+    xvD = vectorUnpackLowSignedByte(xvB);
+}
+
+:vpkswss128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=10 & XENON_BIT_4=0
+{
+    xvD = vectorPackSignedWordSignedSaturate(xvA,xvB);
+}
+
+:vsraw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=5 & XENON_BIT_4=1
+{
+    xvD = vectorShiftRightAlgebraicWord(xvA,xvB);
+}
+
+:vrlw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=1 & XENON_BIT_4=1
+{
+    xvD = vectorRotateLeftIntegerWord(xvA,xvB);
+}
+
+# VX128_R compare-bounds forms. Bit 6 is the record bit, represented through
+# the low bit of XENON_BITS_6_9 just like the other compare constructors.
+:vcmpbfp128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=6 & XENON_BIT_4=0
+{
+    xvD = vectorCompareBoundsFloatingPoint(xvA,xvB);
+}
+
+:vcmpbfp128. xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=7 & XENON_BIT_4=0
+{
+    xvD = vectorCompareBoundsFloatingPoint(xvA,xvB);
+    xenon_vmx128_record(xvD);
+}
+
+# VX128_3 one-source round / conversion forms.
+:vrfim128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=51
+{
+    xvD = vectorRoundToFloatingPointIntegerTowardMinusInfinity(xvB);
+}
+
+:vrfin128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=55
+{
+    xvD = vectorRoundToFloatingPointIntegerNearest(xvB);
+}
+
+:vrfiz128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=63
+{
+    xvD = vectorRoundToFloatingPointIntegerTowardZero(xvB);
+}
+
+:vcfpuxws128 xvD,xvB,A_BITS
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=39
+{
+    xvD = vectorConvertToUnsignedFixedPointWordSaturate(xvB,A_BITS:1);
+}
+
+# VX128_1 partial vector-memory forms. Reuse the aligned-memory
+# dependencies and opaque partial-load/store userops with the extended vector
+# register namespace.
+:lvlx128 xvR,RA_OR_ZERO,RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=16 & BITS_4_5=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + RB;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    block:16 = *[ram]:16 aligned;
+    xvR = xenon_lvlx_partial(block,eb);
+}
+
+:stvlx128 xvR,RA_OR_ZERO,RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=20 & BITS_4_5=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + RB;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    old_block:16 = *[ram]:16 aligned;
+    new_block:16 = xenon_stvlx_partial(old_block,xvR,eb);
+    *[ram]:16 aligned = new_block;
+}
+
+# Standard Cell/AltiVec load-vector-right indexed. Ghidra 12.1.2's derived
+# language does not decode this form. Preserve memory and
+# offset dependencies without guessing byte-lane semantics.
+:lvrx vrD,RA_OR_ZERO,B
+    is OP=31 & vrD & RA_OR_ZERO & B & XOP_1_10=551 & Rc=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + B;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    block:16 = *[ram]:16 aligned;
+    vrD = xenon_lvrx_partial(block,eb);
+}

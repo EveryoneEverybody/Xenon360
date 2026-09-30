@@ -1,0 +1,25 @@
+.build/
+.gradle/
+build/
+dist/
+lib/
+incoming/
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local Xbox/Ghidra analysis artifacts
+*.xex
+*.xexp
+*.pdb
+*.xdb
+*.iso
+*.gpr
+*.rep/
+*.dll
+*.exe
+*.lib
+corpus/
+local_corpus/

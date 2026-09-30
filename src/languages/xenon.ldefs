@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<language_definitions>
+  <language processor="PowerPC"
+            endian="big"
+            size="32"
+            variant="Xenon-VMX128-64-32addr"
+            version="1.0"
+            slafile="xenon_64_isa_altivec_be.sla"
+            processorspec="ppc_64.pspec"
+            id="PowerPC:BE:64:Xenon-VMX128-32addr">
+    <description>Xbox 360 Xenon PowerPC 64-bit big-endian with VMX128 and 32-bit addressing</description>
+    <truncate_space space="ram" size="4"/>
+    <compiler name="default" spec="ppc_64_32.cspec" id="default"/>
+  </language>
+</language_definitions>

@@ -1,0 +1,142 @@
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
+// Prepare an isolated copy of Ghidra's PowerPC language; never patch the installation.
+def upstream = new File(ghidraHome, 'Ghidra/Processors/PowerPC/data/languages')
+def source = file('src/languages')
+def output = layout.buildDirectory.dir('xenon-language')
+def normalize = { String text -> text.replace('\r\n', '\n').replace('\r', '\n') }
+def replaceOnce = { String text, String before, String after ->
+    if (text.count(before) != 1) {
+        throw new GradleException("Expected one language fragment, found ${text.count(before)}: ${before}")
+    }
+    text.replace(before, after)
+}
+def phase2 = { String input ->
+    def text = normalize(input)
+    [
+        'xvUIMM5: imm is A [ imm = A; ] { tmp:1 = imm; export tmp; }',
+        'xvSH4: sh is XENON_BITS_6_9 [ sh = XENON_BITS_6_9; ] { tmp:1 = sh; export tmp; }',
+        'xvZ2: z is XENON_BITS_6_7 [ z = XENON_BITS_6_7; ] { tmp:1 = z; export tmp; }'
+    ].each { text = replaceOnce(text, it + '\n', '') }
+    def edits = [
+        ['xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1 = perm; export tmp; }',
+         'xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { export *[const]:1 perm; }'],
+        [':vrlimi128 xvD,xvB,xvUIMM5,xvZ2', ':vrlimi128 xvD,xvB,A_BITS,XENON_BITS_6_7'],
+        ['is OP=6 & xvD & xvB & xvUIMM5 & xvZ2 & XENON_BITS_8_10=7 & BITS_4_5=1',
+         'is OP=6 & xvD & xvB & A_BITS & XENON_BITS_6_7 & XENON_BITS_8_10=7 & BITS_4_5=1'],
+        ['xvD = xenon_vrlimi128(xvD,xvB,xvUIMM5,xvZ2);', 'xvD = xenon_vrlimi128(xvD,xvB,A_BITS:1,XENON_BITS_6_7:1);'],
+        [':vsldoi128 xvD,xvA,xvB,xvSH4', ':vsldoi128 xvD,xvA,xvB,XENON_BITS_6_9'],
+        ['is OP=4 & xvD & xvA & xvB & xvSH4 & XENON_BIT_4=1', 'is OP=4 & xvD & xvA & xvB & XENON_BITS_6_9 & XENON_BIT_4=1'],
+        ['xvD = vectorShiftLeftDoubleByOctetImmediate(xvA,xvB,xvSH4);', 'xvD = vectorShiftLeftDoubleByOctetImmediate(xvA,xvB,XENON_BITS_6_9:1);'],
+        [':vspltw128 xvD,xvB,xvUIMM5', ':vspltw128 xvD,xvB,A_BITS'],
+        ['is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=115', 'is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=115'],
+        ['xvD = vectorSplatWord(xvB,xvUIMM5);', 'xvD = vectorSplatWord(xvB,A_BITS:1);'],
+        [':vcsxwfp128 xvD,xvB,xvUIMM5', ':vcsxwfp128 xvD,xvB,A_BITS'],
+        ['is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=43', 'is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=43'],
+        ['xvD = vectorConvertFromSignedFixedPointWord(xvB,xvUIMM5);', 'xvD = vectorConvertFromSignedFixedPointWord(xvB,A_BITS:1);']
+    ]
+    edits.each { text = replaceOnce(text, it[0], it[1]) }
+    text
+}
+
+tasks.register('verifyLanguagePreparation') {
+    group = 'verification'
+    inputs.file(new File(source, 'xenon_vmx128_phase2.sinc'))
+    doLast {
+        def lf = normalize(new File(source, 'xenon_vmx128_phase2.sinc').getText('UTF-8'))
+        if (phase2(lf) != phase2(lf.replace('\n', '\r\n'))) {
+            throw new GradleException('Language preparation depends on checkout line endings.')
+        }
+        def rejected = false
+        try { phase2(lf.replace(':vrlimi128 xvD,xvB,xvUIMM5,xvZ2', ':missing')) }
+        catch (GradleException expected) { rejected = true }
+        if (!rejected) { throw new GradleException('Language preparation accepted an incompatible input.') }
+        logger.lifecycle('Language preparation passed: LF, CRLF and changed-input checks.')
+    }
+}
+
+tasks.register('prepareLanguage') {
+    inputs.dir upstream
+    inputs.dir source
+    inputs.file file('gradle/xenon-language.gradle')
+    outputs.dir output
+    doLast {
+        if (!upstream.isDirectory()) { throw new GradleException("PowerPC language sources not found: ${upstream}") }
+        def destination = output.get().asFile
+        delete destination
+        destination.mkdirs()
+        def copyText = { File input, String name ->
+            new File(destination, name).setText(normalize(input.getText('UTF-8')), 'UTF-8')
+        }
+        upstream.listFiles().findAll { it.name.endsWith('.sinc') }.sort { it.name }.each { copyText(it, it.name) }
+        source.listFiles().findAll { it.name ==~ /xenon_vmx128.*\.sinc/ }.sort { it.name }.each { copyText(it, it.name) }
+        ['xenon_64_isa_altivec_be.slaspec', 'xenon.ldefs'].each { copyText(new File(source, it), it) }
+        ['ppc_64.pspec', 'ppc_64_32.cspec'].each { copyText(new File(upstream, it), it) }
+
+        def common = new File(destination, 'ppc_common.sinc')
+        def anchor = '\tBITS_6_10=(6,10)'
+        def fields = ['BIT_4=(4,4)', 'BIT_5=(5,5)', 'BITS_2_3=(2,3)', 'BITS_4_10=(4,10)',
+                      'BITS_6_7=(6,7)', 'BITS_6_8=(6,8)', 'BITS_6_9=(6,9)', 'BITS_8_10=(8,10)', 'BITS_9_10=(9,10)']
+        common.setText(replaceOnce(common.getText('UTF-8'), anchor,
+            anchor + '\n' + fields.collect { '\tXENON_' + it }.join('\n')), 'UTF-8')
+
+        // These later PowerISA instructions overlap Xenon's VMX128 encodings.
+        def collisions = [
+            ['vcmpequd', /(?ms)^:vcmpequd\s+vrD,vrA,vrB\s+is\s+OP=4\s*&\s*vrD\s*&\s*vrA\s*&\s*vrB\s*&\s*Rc2=0\s*&\s*XOP_0_9=199\s*\{\s*vrD\s*=\s*altv207_13\(vrA,vrB\);\s*\}\s*/, 'lvx128 v32..v63'],
+            ['vabsdub', /(?ms)^:vabsdub\s+vrD,vrA,vrB\s+is\s+OP=4\s*&\s*vrD\s*&\s*vrA\s*&\s*vrB\s*&\s*XOP_0_10=1027\s*\{\s*vrD\s*=\s*altv300_15\(vrA,vrB\);\s*\}\s*/, 'lvlx128 v0..v31'],
+            ['vcmpneb.', /(?ms)^:vcmpneb\.\s+vrD,vrA,vrB\s+is\s+OP=4\s*&\s*vrD\s*&\s*vrA\s*&\s*vrB\s*&\s*Rc2=1\s*&\s*XOP_0_9=7\s*\{\s*vrD\s*=\s*altv300_21\(vrA,vrB\);\s*\}\s*/, 'lvlx128 v32..v63'],
+            ['vcmpnezb.', /(?ms)^:vcmpnezb\.\s+vrD,vrA,vrB\s+is\s+OP=4\s*&\s*vrD\s*&\s*vrA\s*&\s*vrB\s*&\s*Rc2=1\s*&\s*XOP_0_9=263\s*\{\s*vrD\s*=\s*altv300_27\(vrA,vrB\);\s*\}\s*/, 'stvlx128 v32..v63'],
+            ['vcmpnezh.', /(?ms)^:vcmpnezh\.\s+vrD,vrA,vrB\s+is\s+OP=4\s*&\s*vrD\s*&\s*vrA\s*&\s*vrB\s*&\s*Rc2=1\s*&\s*XOP_0_9=327\s*\{\s*vrD\s*=\s*altv300_29\(vrA,vrB\);\s*\}\s*/, 'stvrx128 v32..v63'],
+            ['vcmpnezw', /(?ms)^:vcmpnezw\s+vrD,vrA,vrB\s+is\s+OP=4\s*&\s*vrD\s*&\s*vrA\s*&\s*vrB\s*&\s*Rc2=0\s*&\s*XOP_0_9=391\s*\{\s*vrD\s*=\s*altv300_30\(vrA,vrB\);\s*\}\s*/, 'stvewx128 v32..v63']
+        ]
+        def altivec = new File(destination, 'altivec.sinc').getText('UTF-8')
+        collisions.each { name, pattern, reason ->
+            def matcher = altivec =~ pattern
+            if (matcher.count != 1) { throw new GradleException("Expected one ${name} constructor; found ${matcher.count}.") }
+            altivec = altivec.replaceAll(pattern, "# Xenon VMX128: stock ${name} constructor removed because its\n# encoding overlaps ${reason} on Xenon.\n")
+        }
+        new File(destination, 'xenon_altivec.sinc').setText(altivec, 'UTF-8')
+        def immediateSource = new File(destination, 'xenon_vmx128_phase2.sinc')
+        immediateSource.setText(phase2(immediateSource.getText('UTF-8')), 'UTF-8')
+
+        [4: ['vandc128','vnmsubfp128','vcmpbfp128'], 5: ['vrfip128','stvrx128'], 6: ['vpkuwus128']].each { part, mnemonics ->
+            def include = "xenon_vmx128_phase${part}.sinc"
+            if (!new File(destination, 'xenon_64_isa_altivec_be.slaspec').getText('UTF-8').contains('@include "' + include + '"')) {
+                throw new GradleException("The language specification does not include ${include}.")
+            }
+            mnemonics.each { mnemonic ->
+                if (!new File(destination, include).getText('UTF-8').contains(':' + mnemonic)) {
+                    throw new GradleException("Missing Xenon instruction constructor: ${mnemonic}")
+                }
+            }
+        }
+    }
+}
+
+tasks.register('compileSleigh', JavaExec) {
+    dependsOn tasks.named('prepareLanguage')
+    def specification = output.map { it.file('xenon_64_isa_altivec_be.slaspec') }
+    def compiled = output.map { it.file('xenon_64_isa_altivec_be.sla') }
+    inputs.files(fileTree(output) { exclude '*.sla' })
+    outputs.file compiled
+    classpath = files(new File(ghidraHome, 'Ghidra/Framework/Utility/lib/Utility.jar'))
+    mainClass = 'ghidra.Ghidra'
+    maxHeapSize = '1g'
+    systemProperties([
+        'java.system.class.loader': 'ghidra.GhidraClassLoader',
+        'java.awt.headless': 'true', 'file.encoding': 'UTF-8',
+        'application.settingsdir': layout.buildDirectory.dir('sleigh/settings').get().asFile.absolutePath,
+        'application.cachedir': layout.buildDirectory.dir('sleigh/cache').get().asFile.absolutePath,
+        'application.tempdir': layout.buildDirectory.dir('sleigh/temp').get().asFile.absolutePath
+    ])
+    doFirst {
+        args = ['ghidra.pcodeCPort.slgh_compile.SleighCompileLauncher', specification.get().asFile.absolutePath,
+                compiled.get().asFile.absolutePath]
+    }
+    doLast {
+        if (!compiled.get().asFile.isFile() || compiled.get().asFile.length() == 0) {
+            throw new GradleException('SLEIGH did not produce a compiled Xenon language.')
+        }
+    }
+}

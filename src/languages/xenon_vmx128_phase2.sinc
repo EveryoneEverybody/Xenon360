@@ -1,0 +1,559 @@
+# Additional Xbox 360 Xenon VMX128 arithmetic, permutation, conversion,
+# and indexed memory forms.
+#
+# Straightforward operations reuse Ghidra's existing AltiVec p-code userops
+# or exact integer p-code. More complex VMX128 operations use named Xenon
+# userops with correct source/destination dependencies instead of fake no-op
+# semantics. lvlx/stvlx also preserve their aligned memory dependencies.
+
+define pcodeop xenon_vmulfp128;
+define pcodeop xenon_vmsum3fp128;
+define pcodeop xenon_vmsum4fp128;
+define pcodeop xenon_vperm128;
+define pcodeop xenon_vpermwi128;
+define pcodeop xenon_vrlimi128;
+define pcodeop xenon_lvlx_partial;
+define pcodeop xenon_stvlx_partial;
+
+# Full 7-bit VMX128 operands for the VX128-family formats.
+# xvD = D[4:0] | instruction[3:2] << 5
+xvD: "v0" is D=0 & XENON_BITS_2_3=0 { export vs32; }
+xvD: "v1" is D=1 & XENON_BITS_2_3=0 { export vs33; }
+xvD: "v2" is D=2 & XENON_BITS_2_3=0 { export vs34; }
+xvD: "v3" is D=3 & XENON_BITS_2_3=0 { export vs35; }
+xvD: "v4" is D=4 & XENON_BITS_2_3=0 { export vs36; }
+xvD: "v5" is D=5 & XENON_BITS_2_3=0 { export vs37; }
+xvD: "v6" is D=6 & XENON_BITS_2_3=0 { export vs38; }
+xvD: "v7" is D=7 & XENON_BITS_2_3=0 { export vs39; }
+xvD: "v8" is D=8 & XENON_BITS_2_3=0 { export vs40; }
+xvD: "v9" is D=9 & XENON_BITS_2_3=0 { export vs41; }
+xvD: "v10" is D=10 & XENON_BITS_2_3=0 { export vs42; }
+xvD: "v11" is D=11 & XENON_BITS_2_3=0 { export vs43; }
+xvD: "v12" is D=12 & XENON_BITS_2_3=0 { export vs44; }
+xvD: "v13" is D=13 & XENON_BITS_2_3=0 { export vs45; }
+xvD: "v14" is D=14 & XENON_BITS_2_3=0 { export vs46; }
+xvD: "v15" is D=15 & XENON_BITS_2_3=0 { export vs47; }
+xvD: "v16" is D=16 & XENON_BITS_2_3=0 { export vs48; }
+xvD: "v17" is D=17 & XENON_BITS_2_3=0 { export vs49; }
+xvD: "v18" is D=18 & XENON_BITS_2_3=0 { export vs50; }
+xvD: "v19" is D=19 & XENON_BITS_2_3=0 { export vs51; }
+xvD: "v20" is D=20 & XENON_BITS_2_3=0 { export vs52; }
+xvD: "v21" is D=21 & XENON_BITS_2_3=0 { export vs53; }
+xvD: "v22" is D=22 & XENON_BITS_2_3=0 { export vs54; }
+xvD: "v23" is D=23 & XENON_BITS_2_3=0 { export vs55; }
+xvD: "v24" is D=24 & XENON_BITS_2_3=0 { export vs56; }
+xvD: "v25" is D=25 & XENON_BITS_2_3=0 { export vs57; }
+xvD: "v26" is D=26 & XENON_BITS_2_3=0 { export vs58; }
+xvD: "v27" is D=27 & XENON_BITS_2_3=0 { export vs59; }
+xvD: "v28" is D=28 & XENON_BITS_2_3=0 { export vs60; }
+xvD: "v29" is D=29 & XENON_BITS_2_3=0 { export vs61; }
+xvD: "v30" is D=30 & XENON_BITS_2_3=0 { export vs62; }
+xvD: "v31" is D=31 & XENON_BITS_2_3=0 { export vs63; }
+xvD: "v32" is D=0 & XENON_BITS_2_3=1 { export v32; }
+xvD: "v33" is D=1 & XENON_BITS_2_3=1 { export v33; }
+xvD: "v34" is D=2 & XENON_BITS_2_3=1 { export v34; }
+xvD: "v35" is D=3 & XENON_BITS_2_3=1 { export v35; }
+xvD: "v36" is D=4 & XENON_BITS_2_3=1 { export v36; }
+xvD: "v37" is D=5 & XENON_BITS_2_3=1 { export v37; }
+xvD: "v38" is D=6 & XENON_BITS_2_3=1 { export v38; }
+xvD: "v39" is D=7 & XENON_BITS_2_3=1 { export v39; }
+xvD: "v40" is D=8 & XENON_BITS_2_3=1 { export v40; }
+xvD: "v41" is D=9 & XENON_BITS_2_3=1 { export v41; }
+xvD: "v42" is D=10 & XENON_BITS_2_3=1 { export v42; }
+xvD: "v43" is D=11 & XENON_BITS_2_3=1 { export v43; }
+xvD: "v44" is D=12 & XENON_BITS_2_3=1 { export v44; }
+xvD: "v45" is D=13 & XENON_BITS_2_3=1 { export v45; }
+xvD: "v46" is D=14 & XENON_BITS_2_3=1 { export v46; }
+xvD: "v47" is D=15 & XENON_BITS_2_3=1 { export v47; }
+xvD: "v48" is D=16 & XENON_BITS_2_3=1 { export v48; }
+xvD: "v49" is D=17 & XENON_BITS_2_3=1 { export v49; }
+xvD: "v50" is D=18 & XENON_BITS_2_3=1 { export v50; }
+xvD: "v51" is D=19 & XENON_BITS_2_3=1 { export v51; }
+xvD: "v52" is D=20 & XENON_BITS_2_3=1 { export v52; }
+xvD: "v53" is D=21 & XENON_BITS_2_3=1 { export v53; }
+xvD: "v54" is D=22 & XENON_BITS_2_3=1 { export v54; }
+xvD: "v55" is D=23 & XENON_BITS_2_3=1 { export v55; }
+xvD: "v56" is D=24 & XENON_BITS_2_3=1 { export v56; }
+xvD: "v57" is D=25 & XENON_BITS_2_3=1 { export v57; }
+xvD: "v58" is D=26 & XENON_BITS_2_3=1 { export v58; }
+xvD: "v59" is D=27 & XENON_BITS_2_3=1 { export v59; }
+xvD: "v60" is D=28 & XENON_BITS_2_3=1 { export v60; }
+xvD: "v61" is D=29 & XENON_BITS_2_3=1 { export v61; }
+xvD: "v62" is D=30 & XENON_BITS_2_3=1 { export v62; }
+xvD: "v63" is D=31 & XENON_BITS_2_3=1 { export v63; }
+xvD: "v64" is D=0 & XENON_BITS_2_3=2 { export v64; }
+xvD: "v65" is D=1 & XENON_BITS_2_3=2 { export v65; }
+xvD: "v66" is D=2 & XENON_BITS_2_3=2 { export v66; }
+xvD: "v67" is D=3 & XENON_BITS_2_3=2 { export v67; }
+xvD: "v68" is D=4 & XENON_BITS_2_3=2 { export v68; }
+xvD: "v69" is D=5 & XENON_BITS_2_3=2 { export v69; }
+xvD: "v70" is D=6 & XENON_BITS_2_3=2 { export v70; }
+xvD: "v71" is D=7 & XENON_BITS_2_3=2 { export v71; }
+xvD: "v72" is D=8 & XENON_BITS_2_3=2 { export v72; }
+xvD: "v73" is D=9 & XENON_BITS_2_3=2 { export v73; }
+xvD: "v74" is D=10 & XENON_BITS_2_3=2 { export v74; }
+xvD: "v75" is D=11 & XENON_BITS_2_3=2 { export v75; }
+xvD: "v76" is D=12 & XENON_BITS_2_3=2 { export v76; }
+xvD: "v77" is D=13 & XENON_BITS_2_3=2 { export v77; }
+xvD: "v78" is D=14 & XENON_BITS_2_3=2 { export v78; }
+xvD: "v79" is D=15 & XENON_BITS_2_3=2 { export v79; }
+xvD: "v80" is D=16 & XENON_BITS_2_3=2 { export v80; }
+xvD: "v81" is D=17 & XENON_BITS_2_3=2 { export v81; }
+xvD: "v82" is D=18 & XENON_BITS_2_3=2 { export v82; }
+xvD: "v83" is D=19 & XENON_BITS_2_3=2 { export v83; }
+xvD: "v84" is D=20 & XENON_BITS_2_3=2 { export v84; }
+xvD: "v85" is D=21 & XENON_BITS_2_3=2 { export v85; }
+xvD: "v86" is D=22 & XENON_BITS_2_3=2 { export v86; }
+xvD: "v87" is D=23 & XENON_BITS_2_3=2 { export v87; }
+xvD: "v88" is D=24 & XENON_BITS_2_3=2 { export v88; }
+xvD: "v89" is D=25 & XENON_BITS_2_3=2 { export v89; }
+xvD: "v90" is D=26 & XENON_BITS_2_3=2 { export v90; }
+xvD: "v91" is D=27 & XENON_BITS_2_3=2 { export v91; }
+xvD: "v92" is D=28 & XENON_BITS_2_3=2 { export v92; }
+xvD: "v93" is D=29 & XENON_BITS_2_3=2 { export v93; }
+xvD: "v94" is D=30 & XENON_BITS_2_3=2 { export v94; }
+xvD: "v95" is D=31 & XENON_BITS_2_3=2 { export v95; }
+xvD: "v96" is D=0 & XENON_BITS_2_3=3 { export v96; }
+xvD: "v97" is D=1 & XENON_BITS_2_3=3 { export v97; }
+xvD: "v98" is D=2 & XENON_BITS_2_3=3 { export v98; }
+xvD: "v99" is D=3 & XENON_BITS_2_3=3 { export v99; }
+xvD: "v100" is D=4 & XENON_BITS_2_3=3 { export v100; }
+xvD: "v101" is D=5 & XENON_BITS_2_3=3 { export v101; }
+xvD: "v102" is D=6 & XENON_BITS_2_3=3 { export v102; }
+xvD: "v103" is D=7 & XENON_BITS_2_3=3 { export v103; }
+xvD: "v104" is D=8 & XENON_BITS_2_3=3 { export v104; }
+xvD: "v105" is D=9 & XENON_BITS_2_3=3 { export v105; }
+xvD: "v106" is D=10 & XENON_BITS_2_3=3 { export v106; }
+xvD: "v107" is D=11 & XENON_BITS_2_3=3 { export v107; }
+xvD: "v108" is D=12 & XENON_BITS_2_3=3 { export v108; }
+xvD: "v109" is D=13 & XENON_BITS_2_3=3 { export v109; }
+xvD: "v110" is D=14 & XENON_BITS_2_3=3 { export v110; }
+xvD: "v111" is D=15 & XENON_BITS_2_3=3 { export v111; }
+xvD: "v112" is D=16 & XENON_BITS_2_3=3 { export v112; }
+xvD: "v113" is D=17 & XENON_BITS_2_3=3 { export v113; }
+xvD: "v114" is D=18 & XENON_BITS_2_3=3 { export v114; }
+xvD: "v115" is D=19 & XENON_BITS_2_3=3 { export v115; }
+xvD: "v116" is D=20 & XENON_BITS_2_3=3 { export v116; }
+xvD: "v117" is D=21 & XENON_BITS_2_3=3 { export v117; }
+xvD: "v118" is D=22 & XENON_BITS_2_3=3 { export v118; }
+xvD: "v119" is D=23 & XENON_BITS_2_3=3 { export v119; }
+xvD: "v120" is D=24 & XENON_BITS_2_3=3 { export v120; }
+xvD: "v121" is D=25 & XENON_BITS_2_3=3 { export v121; }
+xvD: "v122" is D=26 & XENON_BITS_2_3=3 { export v122; }
+xvD: "v123" is D=27 & XENON_BITS_2_3=3 { export v123; }
+xvD: "v124" is D=28 & XENON_BITS_2_3=3 { export v124; }
+xvD: "v125" is D=29 & XENON_BITS_2_3=3 { export v125; }
+xvD: "v126" is D=30 & XENON_BITS_2_3=3 { export v126; }
+xvD: "v127" is D=31 & XENON_BITS_2_3=3 { export v127; }
+
+# xvB = B[4:0] | instruction[1:0] << 5
+xvB: "v0" is B=0 & BITS_0_1=0 { export vs32; }
+xvB: "v1" is B=1 & BITS_0_1=0 { export vs33; }
+xvB: "v2" is B=2 & BITS_0_1=0 { export vs34; }
+xvB: "v3" is B=3 & BITS_0_1=0 { export vs35; }
+xvB: "v4" is B=4 & BITS_0_1=0 { export vs36; }
+xvB: "v5" is B=5 & BITS_0_1=0 { export vs37; }
+xvB: "v6" is B=6 & BITS_0_1=0 { export vs38; }
+xvB: "v7" is B=7 & BITS_0_1=0 { export vs39; }
+xvB: "v8" is B=8 & BITS_0_1=0 { export vs40; }
+xvB: "v9" is B=9 & BITS_0_1=0 { export vs41; }
+xvB: "v10" is B=10 & BITS_0_1=0 { export vs42; }
+xvB: "v11" is B=11 & BITS_0_1=0 { export vs43; }
+xvB: "v12" is B=12 & BITS_0_1=0 { export vs44; }
+xvB: "v13" is B=13 & BITS_0_1=0 { export vs45; }
+xvB: "v14" is B=14 & BITS_0_1=0 { export vs46; }
+xvB: "v15" is B=15 & BITS_0_1=0 { export vs47; }
+xvB: "v16" is B=16 & BITS_0_1=0 { export vs48; }
+xvB: "v17" is B=17 & BITS_0_1=0 { export vs49; }
+xvB: "v18" is B=18 & BITS_0_1=0 { export vs50; }
+xvB: "v19" is B=19 & BITS_0_1=0 { export vs51; }
+xvB: "v20" is B=20 & BITS_0_1=0 { export vs52; }
+xvB: "v21" is B=21 & BITS_0_1=0 { export vs53; }
+xvB: "v22" is B=22 & BITS_0_1=0 { export vs54; }
+xvB: "v23" is B=23 & BITS_0_1=0 { export vs55; }
+xvB: "v24" is B=24 & BITS_0_1=0 { export vs56; }
+xvB: "v25" is B=25 & BITS_0_1=0 { export vs57; }
+xvB: "v26" is B=26 & BITS_0_1=0 { export vs58; }
+xvB: "v27" is B=27 & BITS_0_1=0 { export vs59; }
+xvB: "v28" is B=28 & BITS_0_1=0 { export vs60; }
+xvB: "v29" is B=29 & BITS_0_1=0 { export vs61; }
+xvB: "v30" is B=30 & BITS_0_1=0 { export vs62; }
+xvB: "v31" is B=31 & BITS_0_1=0 { export vs63; }
+xvB: "v32" is B=0 & BITS_0_1=1 { export v32; }
+xvB: "v33" is B=1 & BITS_0_1=1 { export v33; }
+xvB: "v34" is B=2 & BITS_0_1=1 { export v34; }
+xvB: "v35" is B=3 & BITS_0_1=1 { export v35; }
+xvB: "v36" is B=4 & BITS_0_1=1 { export v36; }
+xvB: "v37" is B=5 & BITS_0_1=1 { export v37; }
+xvB: "v38" is B=6 & BITS_0_1=1 { export v38; }
+xvB: "v39" is B=7 & BITS_0_1=1 { export v39; }
+xvB: "v40" is B=8 & BITS_0_1=1 { export v40; }
+xvB: "v41" is B=9 & BITS_0_1=1 { export v41; }
+xvB: "v42" is B=10 & BITS_0_1=1 { export v42; }
+xvB: "v43" is B=11 & BITS_0_1=1 { export v43; }
+xvB: "v44" is B=12 & BITS_0_1=1 { export v44; }
+xvB: "v45" is B=13 & BITS_0_1=1 { export v45; }
+xvB: "v46" is B=14 & BITS_0_1=1 { export v46; }
+xvB: "v47" is B=15 & BITS_0_1=1 { export v47; }
+xvB: "v48" is B=16 & BITS_0_1=1 { export v48; }
+xvB: "v49" is B=17 & BITS_0_1=1 { export v49; }
+xvB: "v50" is B=18 & BITS_0_1=1 { export v50; }
+xvB: "v51" is B=19 & BITS_0_1=1 { export v51; }
+xvB: "v52" is B=20 & BITS_0_1=1 { export v52; }
+xvB: "v53" is B=21 & BITS_0_1=1 { export v53; }
+xvB: "v54" is B=22 & BITS_0_1=1 { export v54; }
+xvB: "v55" is B=23 & BITS_0_1=1 { export v55; }
+xvB: "v56" is B=24 & BITS_0_1=1 { export v56; }
+xvB: "v57" is B=25 & BITS_0_1=1 { export v57; }
+xvB: "v58" is B=26 & BITS_0_1=1 { export v58; }
+xvB: "v59" is B=27 & BITS_0_1=1 { export v59; }
+xvB: "v60" is B=28 & BITS_0_1=1 { export v60; }
+xvB: "v61" is B=29 & BITS_0_1=1 { export v61; }
+xvB: "v62" is B=30 & BITS_0_1=1 { export v62; }
+xvB: "v63" is B=31 & BITS_0_1=1 { export v63; }
+xvB: "v64" is B=0 & BITS_0_1=2 { export v64; }
+xvB: "v65" is B=1 & BITS_0_1=2 { export v65; }
+xvB: "v66" is B=2 & BITS_0_1=2 { export v66; }
+xvB: "v67" is B=3 & BITS_0_1=2 { export v67; }
+xvB: "v68" is B=4 & BITS_0_1=2 { export v68; }
+xvB: "v69" is B=5 & BITS_0_1=2 { export v69; }
+xvB: "v70" is B=6 & BITS_0_1=2 { export v70; }
+xvB: "v71" is B=7 & BITS_0_1=2 { export v71; }
+xvB: "v72" is B=8 & BITS_0_1=2 { export v72; }
+xvB: "v73" is B=9 & BITS_0_1=2 { export v73; }
+xvB: "v74" is B=10 & BITS_0_1=2 { export v74; }
+xvB: "v75" is B=11 & BITS_0_1=2 { export v75; }
+xvB: "v76" is B=12 & BITS_0_1=2 { export v76; }
+xvB: "v77" is B=13 & BITS_0_1=2 { export v77; }
+xvB: "v78" is B=14 & BITS_0_1=2 { export v78; }
+xvB: "v79" is B=15 & BITS_0_1=2 { export v79; }
+xvB: "v80" is B=16 & BITS_0_1=2 { export v80; }
+xvB: "v81" is B=17 & BITS_0_1=2 { export v81; }
+xvB: "v82" is B=18 & BITS_0_1=2 { export v82; }
+xvB: "v83" is B=19 & BITS_0_1=2 { export v83; }
+xvB: "v84" is B=20 & BITS_0_1=2 { export v84; }
+xvB: "v85" is B=21 & BITS_0_1=2 { export v85; }
+xvB: "v86" is B=22 & BITS_0_1=2 { export v86; }
+xvB: "v87" is B=23 & BITS_0_1=2 { export v87; }
+xvB: "v88" is B=24 & BITS_0_1=2 { export v88; }
+xvB: "v89" is B=25 & BITS_0_1=2 { export v89; }
+xvB: "v90" is B=26 & BITS_0_1=2 { export v90; }
+xvB: "v91" is B=27 & BITS_0_1=2 { export v91; }
+xvB: "v92" is B=28 & BITS_0_1=2 { export v92; }
+xvB: "v93" is B=29 & BITS_0_1=2 { export v93; }
+xvB: "v94" is B=30 & BITS_0_1=2 { export v94; }
+xvB: "v95" is B=31 & BITS_0_1=2 { export v95; }
+xvB: "v96" is B=0 & BITS_0_1=3 { export v96; }
+xvB: "v97" is B=1 & BITS_0_1=3 { export v97; }
+xvB: "v98" is B=2 & BITS_0_1=3 { export v98; }
+xvB: "v99" is B=3 & BITS_0_1=3 { export v99; }
+xvB: "v100" is B=4 & BITS_0_1=3 { export v100; }
+xvB: "v101" is B=5 & BITS_0_1=3 { export v101; }
+xvB: "v102" is B=6 & BITS_0_1=3 { export v102; }
+xvB: "v103" is B=7 & BITS_0_1=3 { export v103; }
+xvB: "v104" is B=8 & BITS_0_1=3 { export v104; }
+xvB: "v105" is B=9 & BITS_0_1=3 { export v105; }
+xvB: "v106" is B=10 & BITS_0_1=3 { export v106; }
+xvB: "v107" is B=11 & BITS_0_1=3 { export v107; }
+xvB: "v108" is B=12 & BITS_0_1=3 { export v108; }
+xvB: "v109" is B=13 & BITS_0_1=3 { export v109; }
+xvB: "v110" is B=14 & BITS_0_1=3 { export v110; }
+xvB: "v111" is B=15 & BITS_0_1=3 { export v111; }
+xvB: "v112" is B=16 & BITS_0_1=3 { export v112; }
+xvB: "v113" is B=17 & BITS_0_1=3 { export v113; }
+xvB: "v114" is B=18 & BITS_0_1=3 { export v114; }
+xvB: "v115" is B=19 & BITS_0_1=3 { export v115; }
+xvB: "v116" is B=20 & BITS_0_1=3 { export v116; }
+xvB: "v117" is B=21 & BITS_0_1=3 { export v117; }
+xvB: "v118" is B=22 & BITS_0_1=3 { export v118; }
+xvB: "v119" is B=23 & BITS_0_1=3 { export v119; }
+xvB: "v120" is B=24 & BITS_0_1=3 { export v120; }
+xvB: "v121" is B=25 & BITS_0_1=3 { export v121; }
+xvB: "v122" is B=26 & BITS_0_1=3 { export v122; }
+xvB: "v123" is B=27 & BITS_0_1=3 { export v123; }
+xvB: "v124" is B=28 & BITS_0_1=3 { export v124; }
+xvB: "v125" is B=29 & BITS_0_1=3 { export v125; }
+xvB: "v126" is B=30 & BITS_0_1=3 { export v126; }
+xvB: "v127" is B=31 & BITS_0_1=3 { export v127; }
+
+# xvA = A[4:0] | instruction[5] << 5 | instruction[10] << 6
+xvA: "v0" is A=0 & XENON_BIT_5=0 & BIT_10=0 { export vs32; }
+xvA: "v1" is A=1 & XENON_BIT_5=0 & BIT_10=0 { export vs33; }
+xvA: "v2" is A=2 & XENON_BIT_5=0 & BIT_10=0 { export vs34; }
+xvA: "v3" is A=3 & XENON_BIT_5=0 & BIT_10=0 { export vs35; }
+xvA: "v4" is A=4 & XENON_BIT_5=0 & BIT_10=0 { export vs36; }
+xvA: "v5" is A=5 & XENON_BIT_5=0 & BIT_10=0 { export vs37; }
+xvA: "v6" is A=6 & XENON_BIT_5=0 & BIT_10=0 { export vs38; }
+xvA: "v7" is A=7 & XENON_BIT_5=0 & BIT_10=0 { export vs39; }
+xvA: "v8" is A=8 & XENON_BIT_5=0 & BIT_10=0 { export vs40; }
+xvA: "v9" is A=9 & XENON_BIT_5=0 & BIT_10=0 { export vs41; }
+xvA: "v10" is A=10 & XENON_BIT_5=0 & BIT_10=0 { export vs42; }
+xvA: "v11" is A=11 & XENON_BIT_5=0 & BIT_10=0 { export vs43; }
+xvA: "v12" is A=12 & XENON_BIT_5=0 & BIT_10=0 { export vs44; }
+xvA: "v13" is A=13 & XENON_BIT_5=0 & BIT_10=0 { export vs45; }
+xvA: "v14" is A=14 & XENON_BIT_5=0 & BIT_10=0 { export vs46; }
+xvA: "v15" is A=15 & XENON_BIT_5=0 & BIT_10=0 { export vs47; }
+xvA: "v16" is A=16 & XENON_BIT_5=0 & BIT_10=0 { export vs48; }
+xvA: "v17" is A=17 & XENON_BIT_5=0 & BIT_10=0 { export vs49; }
+xvA: "v18" is A=18 & XENON_BIT_5=0 & BIT_10=0 { export vs50; }
+xvA: "v19" is A=19 & XENON_BIT_5=0 & BIT_10=0 { export vs51; }
+xvA: "v20" is A=20 & XENON_BIT_5=0 & BIT_10=0 { export vs52; }
+xvA: "v21" is A=21 & XENON_BIT_5=0 & BIT_10=0 { export vs53; }
+xvA: "v22" is A=22 & XENON_BIT_5=0 & BIT_10=0 { export vs54; }
+xvA: "v23" is A=23 & XENON_BIT_5=0 & BIT_10=0 { export vs55; }
+xvA: "v24" is A=24 & XENON_BIT_5=0 & BIT_10=0 { export vs56; }
+xvA: "v25" is A=25 & XENON_BIT_5=0 & BIT_10=0 { export vs57; }
+xvA: "v26" is A=26 & XENON_BIT_5=0 & BIT_10=0 { export vs58; }
+xvA: "v27" is A=27 & XENON_BIT_5=0 & BIT_10=0 { export vs59; }
+xvA: "v28" is A=28 & XENON_BIT_5=0 & BIT_10=0 { export vs60; }
+xvA: "v29" is A=29 & XENON_BIT_5=0 & BIT_10=0 { export vs61; }
+xvA: "v30" is A=30 & XENON_BIT_5=0 & BIT_10=0 { export vs62; }
+xvA: "v31" is A=31 & XENON_BIT_5=0 & BIT_10=0 { export vs63; }
+xvA: "v32" is A=0 & XENON_BIT_5=1 & BIT_10=0 { export v32; }
+xvA: "v33" is A=1 & XENON_BIT_5=1 & BIT_10=0 { export v33; }
+xvA: "v34" is A=2 & XENON_BIT_5=1 & BIT_10=0 { export v34; }
+xvA: "v35" is A=3 & XENON_BIT_5=1 & BIT_10=0 { export v35; }
+xvA: "v36" is A=4 & XENON_BIT_5=1 & BIT_10=0 { export v36; }
+xvA: "v37" is A=5 & XENON_BIT_5=1 & BIT_10=0 { export v37; }
+xvA: "v38" is A=6 & XENON_BIT_5=1 & BIT_10=0 { export v38; }
+xvA: "v39" is A=7 & XENON_BIT_5=1 & BIT_10=0 { export v39; }
+xvA: "v40" is A=8 & XENON_BIT_5=1 & BIT_10=0 { export v40; }
+xvA: "v41" is A=9 & XENON_BIT_5=1 & BIT_10=0 { export v41; }
+xvA: "v42" is A=10 & XENON_BIT_5=1 & BIT_10=0 { export v42; }
+xvA: "v43" is A=11 & XENON_BIT_5=1 & BIT_10=0 { export v43; }
+xvA: "v44" is A=12 & XENON_BIT_5=1 & BIT_10=0 { export v44; }
+xvA: "v45" is A=13 & XENON_BIT_5=1 & BIT_10=0 { export v45; }
+xvA: "v46" is A=14 & XENON_BIT_5=1 & BIT_10=0 { export v46; }
+xvA: "v47" is A=15 & XENON_BIT_5=1 & BIT_10=0 { export v47; }
+xvA: "v48" is A=16 & XENON_BIT_5=1 & BIT_10=0 { export v48; }
+xvA: "v49" is A=17 & XENON_BIT_5=1 & BIT_10=0 { export v49; }
+xvA: "v50" is A=18 & XENON_BIT_5=1 & BIT_10=0 { export v50; }
+xvA: "v51" is A=19 & XENON_BIT_5=1 & BIT_10=0 { export v51; }
+xvA: "v52" is A=20 & XENON_BIT_5=1 & BIT_10=0 { export v52; }
+xvA: "v53" is A=21 & XENON_BIT_5=1 & BIT_10=0 { export v53; }
+xvA: "v54" is A=22 & XENON_BIT_5=1 & BIT_10=0 { export v54; }
+xvA: "v55" is A=23 & XENON_BIT_5=1 & BIT_10=0 { export v55; }
+xvA: "v56" is A=24 & XENON_BIT_5=1 & BIT_10=0 { export v56; }
+xvA: "v57" is A=25 & XENON_BIT_5=1 & BIT_10=0 { export v57; }
+xvA: "v58" is A=26 & XENON_BIT_5=1 & BIT_10=0 { export v58; }
+xvA: "v59" is A=27 & XENON_BIT_5=1 & BIT_10=0 { export v59; }
+xvA: "v60" is A=28 & XENON_BIT_5=1 & BIT_10=0 { export v60; }
+xvA: "v61" is A=29 & XENON_BIT_5=1 & BIT_10=0 { export v61; }
+xvA: "v62" is A=30 & XENON_BIT_5=1 & BIT_10=0 { export v62; }
+xvA: "v63" is A=31 & XENON_BIT_5=1 & BIT_10=0 { export v63; }
+xvA: "v64" is A=0 & XENON_BIT_5=0 & BIT_10=1 { export v64; }
+xvA: "v65" is A=1 & XENON_BIT_5=0 & BIT_10=1 { export v65; }
+xvA: "v66" is A=2 & XENON_BIT_5=0 & BIT_10=1 { export v66; }
+xvA: "v67" is A=3 & XENON_BIT_5=0 & BIT_10=1 { export v67; }
+xvA: "v68" is A=4 & XENON_BIT_5=0 & BIT_10=1 { export v68; }
+xvA: "v69" is A=5 & XENON_BIT_5=0 & BIT_10=1 { export v69; }
+xvA: "v70" is A=6 & XENON_BIT_5=0 & BIT_10=1 { export v70; }
+xvA: "v71" is A=7 & XENON_BIT_5=0 & BIT_10=1 { export v71; }
+xvA: "v72" is A=8 & XENON_BIT_5=0 & BIT_10=1 { export v72; }
+xvA: "v73" is A=9 & XENON_BIT_5=0 & BIT_10=1 { export v73; }
+xvA: "v74" is A=10 & XENON_BIT_5=0 & BIT_10=1 { export v74; }
+xvA: "v75" is A=11 & XENON_BIT_5=0 & BIT_10=1 { export v75; }
+xvA: "v76" is A=12 & XENON_BIT_5=0 & BIT_10=1 { export v76; }
+xvA: "v77" is A=13 & XENON_BIT_5=0 & BIT_10=1 { export v77; }
+xvA: "v78" is A=14 & XENON_BIT_5=0 & BIT_10=1 { export v78; }
+xvA: "v79" is A=15 & XENON_BIT_5=0 & BIT_10=1 { export v79; }
+xvA: "v80" is A=16 & XENON_BIT_5=0 & BIT_10=1 { export v80; }
+xvA: "v81" is A=17 & XENON_BIT_5=0 & BIT_10=1 { export v81; }
+xvA: "v82" is A=18 & XENON_BIT_5=0 & BIT_10=1 { export v82; }
+xvA: "v83" is A=19 & XENON_BIT_5=0 & BIT_10=1 { export v83; }
+xvA: "v84" is A=20 & XENON_BIT_5=0 & BIT_10=1 { export v84; }
+xvA: "v85" is A=21 & XENON_BIT_5=0 & BIT_10=1 { export v85; }
+xvA: "v86" is A=22 & XENON_BIT_5=0 & BIT_10=1 { export v86; }
+xvA: "v87" is A=23 & XENON_BIT_5=0 & BIT_10=1 { export v87; }
+xvA: "v88" is A=24 & XENON_BIT_5=0 & BIT_10=1 { export v88; }
+xvA: "v89" is A=25 & XENON_BIT_5=0 & BIT_10=1 { export v89; }
+xvA: "v90" is A=26 & XENON_BIT_5=0 & BIT_10=1 { export v90; }
+xvA: "v91" is A=27 & XENON_BIT_5=0 & BIT_10=1 { export v91; }
+xvA: "v92" is A=28 & XENON_BIT_5=0 & BIT_10=1 { export v92; }
+xvA: "v93" is A=29 & XENON_BIT_5=0 & BIT_10=1 { export v93; }
+xvA: "v94" is A=30 & XENON_BIT_5=0 & BIT_10=1 { export v94; }
+xvA: "v95" is A=31 & XENON_BIT_5=0 & BIT_10=1 { export v95; }
+xvA: "v96" is A=0 & XENON_BIT_5=1 & BIT_10=1 { export v96; }
+xvA: "v97" is A=1 & XENON_BIT_5=1 & BIT_10=1 { export v97; }
+xvA: "v98" is A=2 & XENON_BIT_5=1 & BIT_10=1 { export v98; }
+xvA: "v99" is A=3 & XENON_BIT_5=1 & BIT_10=1 { export v99; }
+xvA: "v100" is A=4 & XENON_BIT_5=1 & BIT_10=1 { export v100; }
+xvA: "v101" is A=5 & XENON_BIT_5=1 & BIT_10=1 { export v101; }
+xvA: "v102" is A=6 & XENON_BIT_5=1 & BIT_10=1 { export v102; }
+xvA: "v103" is A=7 & XENON_BIT_5=1 & BIT_10=1 { export v103; }
+xvA: "v104" is A=8 & XENON_BIT_5=1 & BIT_10=1 { export v104; }
+xvA: "v105" is A=9 & XENON_BIT_5=1 & BIT_10=1 { export v105; }
+xvA: "v106" is A=10 & XENON_BIT_5=1 & BIT_10=1 { export v106; }
+xvA: "v107" is A=11 & XENON_BIT_5=1 & BIT_10=1 { export v107; }
+xvA: "v108" is A=12 & XENON_BIT_5=1 & BIT_10=1 { export v108; }
+xvA: "v109" is A=13 & XENON_BIT_5=1 & BIT_10=1 { export v109; }
+xvA: "v110" is A=14 & XENON_BIT_5=1 & BIT_10=1 { export v110; }
+xvA: "v111" is A=15 & XENON_BIT_5=1 & BIT_10=1 { export v111; }
+xvA: "v112" is A=16 & XENON_BIT_5=1 & BIT_10=1 { export v112; }
+xvA: "v113" is A=17 & XENON_BIT_5=1 & BIT_10=1 { export v113; }
+xvA: "v114" is A=18 & XENON_BIT_5=1 & BIT_10=1 { export v114; }
+xvA: "v115" is A=19 & XENON_BIT_5=1 & BIT_10=1 { export v115; }
+xvA: "v116" is A=20 & XENON_BIT_5=1 & BIT_10=1 { export v116; }
+xvA: "v117" is A=21 & XENON_BIT_5=1 & BIT_10=1 { export v117; }
+xvA: "v118" is A=22 & XENON_BIT_5=1 & BIT_10=1 { export v118; }
+xvA: "v119" is A=23 & XENON_BIT_5=1 & BIT_10=1 { export v119; }
+xvA: "v120" is A=24 & XENON_BIT_5=1 & BIT_10=1 { export v120; }
+xvA: "v121" is A=25 & XENON_BIT_5=1 & BIT_10=1 { export v121; }
+xvA: "v122" is A=26 & XENON_BIT_5=1 & BIT_10=1 { export v122; }
+xvA: "v123" is A=27 & XENON_BIT_5=1 & BIT_10=1 { export v123; }
+xvA: "v124" is A=28 & XENON_BIT_5=1 & BIT_10=1 { export v124; }
+xvA: "v125" is A=29 & XENON_BIT_5=1 & BIT_10=1 { export v125; }
+xvA: "v126" is A=30 & XENON_BIT_5=1 & BIT_10=1 { export v126; }
+xvA: "v127" is A=31 & XENON_BIT_5=1 & BIT_10=1 { export v127; }
+
+# vperm128 has a three-bit control-vector field.
+xvC: "v0" is XENON_BITS_6_8=0 { export vs32; }
+xvC: "v1" is XENON_BITS_6_8=1 { export vs33; }
+xvC: "v2" is XENON_BITS_6_8=2 { export vs34; }
+xvC: "v3" is XENON_BITS_6_8=3 { export vs35; }
+xvC: "v4" is XENON_BITS_6_8=4 { export vs36; }
+xvC: "v5" is XENON_BITS_6_8=5 { export vs37; }
+xvC: "v6" is XENON_BITS_6_8=6 { export vs38; }
+xvC: "v7" is XENON_BITS_6_8=7 { export vs39; }
+
+# Immediate operands whose underlying instruction fields otherwise overlap
+# PowerPC GPR selector fields.
+xvUIMM5: imm is A [ imm = A; ] { tmp:1 = imm; export tmp; }
+xvSH4: sh is XENON_BITS_6_9 [ sh = XENON_BITS_6_9; ] { tmp:1 = sh; export tmp; }
+xvZ2: z is XENON_BITS_6_7 [ z = XENON_BITS_6_7; ] { tmp:1 = z; export tmp; }
+xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1 = perm; export tmp; }
+
+# VX128 arithmetic/logical forms.
+:vaddfp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=0 & XENON_BIT_4=1
+{
+    xvD = vectorAddFloatingPoint(xvA,xvB);
+}
+
+:vsubfp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=1 & XENON_BIT_4=1
+{
+    xvD = vectorSubtractFloatingPoint(xvA,xvB);
+}
+
+:vmulfp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=2 & XENON_BIT_4=1
+{
+    xvD = xenon_vmulfp128(xvA,xvB);
+}
+
+:vmsum3fp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=6 & XENON_BIT_4=1
+{
+    xvD = xenon_vmsum3fp128(xvA,xvB);
+}
+
+:vmsum4fp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=7 & XENON_BIT_4=1
+{
+    xvD = xenon_vmsum4fp128(xvA,xvB);
+}
+
+:vor128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=11 & XENON_BIT_4=1
+{
+    xvD = xvA | xvB;
+}
+
+:vxor128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=12 & XENON_BIT_4=1
+{
+    xvD = xvA ^ xvB;
+}
+
+:vsel128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=13 & XENON_BIT_4=1
+{
+    mask:16 = xvD;
+    xvD = (xvA & ~mask) | (xvB & mask);
+}
+
+:vminfp128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=11 & XENON_BIT_4=0
+{
+    xvD = vectorMinimumFloatingPoint(xvA,xvB);
+}
+
+:vmrghw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=12 & XENON_BIT_4=0
+{
+    xvD = vectorMergeHighWord(xvA,xvB);
+}
+
+# VX128_2 byte permutation. VC is a three-bit vector register.
+:vperm128 xvD,xvA,xvB,xvC
+    is OP=5 & xvD & xvA & xvB & xvC & BIT_9=0 & XENON_BIT_4=0
+{
+    xvD = xenon_vperm128(xvA,xvB,xvC);
+}
+
+# VX128_P word permutation immediate.
+:vpermwi128 xvD,xvB,xvPERM
+    is OP=6 & xvD & xvB & xvPERM & XENON_BITS_9_10=1 & BITS_4_5=1
+{
+    xvD = xenon_vpermwi128(xvB,xvPERM);
+}
+
+# VX128_4 rotate-left-immediate-and-mask-insert. The old destination is an
+# architectural input, so pass it explicitly to the opaque semantic userop.
+:vrlimi128 xvD,xvB,xvUIMM5,xvZ2
+    is OP=6 & xvD & xvB & xvUIMM5 & xvZ2 & XENON_BITS_8_10=7 & BITS_4_5=1
+{
+    xvD = xenon_vrlimi128(xvD,xvB,xvUIMM5,xvZ2);
+}
+
+# VX128_5 shift-left-double-by-octet-immediate.
+:vsldoi128 xvD,xvA,xvB,xvSH4
+    is OP=4 & xvD & xvA & xvB & xvSH4 & XENON_BIT_4=1
+{
+    xvD = vectorShiftLeftDoubleByOctetImmediate(xvA,xvB,xvSH4);
+}
+
+# VX128_3 forms.
+:vspltisw128 xvD,A_BITSS
+    is OP=6 & xvD & A_BITSS & XENON_BITS_4_10=119
+{
+    xvD = vectorSplatImmediateSignedWord(A_BITSS:1);
+}
+
+:vspltw128 xvD,xvB,xvUIMM5
+    is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=115
+{
+    xvD = vectorSplatWord(xvB,xvUIMM5);
+}
+
+:vcsxwfp128 xvD,xvB,xvUIMM5
+    is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=43
+{
+    xvD = vectorConvertFromSignedFixedPointWord(xvB,xvUIMM5);
+}
+
+# Cell/VMX partial indexed vector loads/stores are not VMX128 opcodes, but
+# are included here because Ghidra's base PowerPC language does not decode them.
+# The userops preserve the aligned memory block and byte-offset dependency
+# without inventing an incorrect byte-permutation implementation.
+:lvlx vrD,RA_OR_ZERO,B
+    is OP=31 & vrD & RA_OR_ZERO & B & XOP_1_10=519 & Rc=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + B;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    block:16 = *[ram]:16 aligned;
+    vrD = xenon_lvlx_partial(block,eb);
+}
+
+:stvlx vrS,RA_OR_ZERO,B
+    is OP=31 & vrS & RA_OR_ZERO & B & XOP_1_10=647 & Rc=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + B;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    old_block:16 = *[ram]:16 aligned;
+    new_block:16 = xenon_stvlx_partial(old_block,vrS,eb);
+    *[ram]:16 aligned = new_block;
+}

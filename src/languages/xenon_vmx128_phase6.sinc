@@ -1,0 +1,11 @@
+# Additional Xbox 360 Xenon VMX128 unsigned word packing support.
+#
+# Stock Ghidra's AltiVec vpkuwus constructor uses
+# vectorPackUnsignedWordUnsignedSaturate. Xenon's form has the same operation
+# with the extended v0..v127 register namespace.
+
+:vpkuwus128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=15 & XENON_BIT_4=0
+{
+    xvD = vectorPackUnsignedWordUnsignedSaturate(xvA,xvB);
+}

@@ -1,0 +1,212 @@
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+
+plugins {
+    id 'java-library'
+}
+
+version = '0.7.0'
+def installation = providers.gradleProperty('GHIDRA_INSTALL_DIR')
+    .orElse(providers.environmentVariable('GHIDRA_INSTALL_DIR')).orNull
+if (!installation) {
+    throw new GradleException('Set GHIDRA_INSTALL_DIR or pass -PGHIDRA_INSTALL_DIR=/path/to/ghidra.')
+}
+ext.ghidraHome = file(installation).canonicalFile
+def propertiesFile = new File(ghidraHome, 'Ghidra/application.properties')
+if (!propertiesFile.isFile()) {
+    throw new GradleException("Not a Ghidra installation: ${ghidraHome}")
+}
+def application = new Properties()
+propertiesFile.withInputStream { application.load(it) }
+ext.ghidraVersion = application.getProperty('application.version')
+if (!(ghidraVersion ==~ /12\.1\.\d+/)) {
+    throw new GradleException("This version supports Ghidra 12.1.x. Found ${ghidraVersion}.")
+}
+if (!JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_21)) {
+    throw new GradleException('Run Gradle with JDK 21 or newer. Set JAVA_HOME to the JDK directory.')
+}
+
+// Use the extension build shipped with the selected Ghidra installation.
+apply from: new File(ghidraHome, 'support/buildExtension.gradle')
+apply from: 'gradle/xenon-language.gradle'
+
+def extensionName = 'XenonVMX128'
+def languageId = 'PowerPC:BE:64:Xenon-VMX128-32addr'
+def generated = layout.buildDirectory.dir('extension')
+def utilityJar = new File(ghidraHome, 'Ghidra/Framework/Utility/lib/Utility.jar')
+def digest = { File input ->
+    MessageDigest.getInstance('SHA-256').digest(input.bytes).encodeHex().toString()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    filePermissions { unix('0644') }
+    dirPermissions { unix('0755') }
+}
+tasks.named('clean') { delete layout.projectDirectory.dir('dist') }
+
+tasks.named('jar', Jar) {
+    archiveBaseName = extensionName
+    archiveVersion = ''
+}
+
+// These tests are standalone Java programs and need no downloaded test framework.
+tasks.named('test') { enabled = false }
+def selfTestTasks = [
+    parserTest: 'xenon360.xex.XexImageSelfTest',
+    patchTest: 'xenon360.xex.XexPatchSelfTest',
+    ordinalTest: 'xenon360.xex.XenonOrdinalResolverSelfTest'
+].collect { taskName, entryPoint ->
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = entryPoint
+    }
+}
+tasks.register('selfTest') {
+    group = 'verification'
+    description = 'Run the parser, patch and import-name regression tests.'
+    dependsOn selfTestTasks
+}
+tasks.named('check') {
+    dependsOn tasks.named('selfTest'), tasks.named('verifyLanguagePreparation')
+}
+
+tasks.register('stageGhidraLicense', Copy) {
+    def license = ['LICENSE', 'LICENSE.txt'].collect { new File(ghidraHome, it) }.find { it.isFile() }
+    if (license == null) { throw new GradleException('The Ghidra license file is missing.') }
+    from license
+    into generated.map { it.dir('licenses') }
+    rename { 'LICENSE-GHIDRA.txt' }
+}
+
+tasks.register('writeBuildInfo') {
+    dependsOn tasks.named('jar'), tasks.named('compileSleigh'), tasks.named('check')
+    def output = generated.map { it.file('XENON360_BUILD.json') }
+    inputs.file(tasks.named('jar').flatMap { it.archiveFile })
+    inputs.file(layout.buildDirectory.file('xenon-language/xenon_64_isa_altivec_be.sla'))
+    inputs.property('ghidraVersion', ghidraVersion)
+    inputs.property('loaderVersion', version.toString())
+    outputs.file output
+    doLast {
+        def result = [
+            schema: 'xenon360/build-v1', loader_version: version.toString(),
+            ghidra_version: ghidraVersion, language_id: languageId,
+            format: 'Xenon360 XEX', java_release: 21, self_tests: 'PASS',
+            external_loader_required: false,
+            supported_container_magics: ['XEX0','XEX?','XEX%','XEX-','XEX1','XEX2'],
+            symbol_formats: ['PDB','XDB'],
+            ordinal_modules: ['xam','xboxkrnl','xbdm','drivers','xnet','xnetd','xapi','connectx'],
+            loader_jar_sha256: digest(tasks.named('jar').get().archiveFile.get().asFile),
+            sla_sha256: digest(layout.buildDirectory.file('xenon-language/xenon_64_isa_altivec_be.sla').get().asFile)
+        ]
+        output.get().asFile.parentFile.mkdirs()
+        output.get().asFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(result)) + '\n', 'UTF-8')
+    }
+}
+
+def allowedEntry = { String entry ->
+    entry in ['extension.properties', 'Module.manifest', 'README.md',
+              'THIRD_PARTY_NOTICES.md', 'LICENSE', 'NOTICE', 'XENON360_BUILD.json',
+              'lib/XenonVMX128.jar'] ||
+        entry ==~ /licenses\/[^\/]+\.txt/ ||
+        entry ==~ /data\/languages\/[^\/]+\.(sinc|slaspec|sla|ldefs|pspec|cspec)/
+}
+tasks.named('buildExtension', Zip) {
+    group = 'build'
+    description = 'Build, test and package the Xenon360 extension.'
+    dependsOn tasks.named('check'), tasks.named('compileSleigh'),
+        tasks.named('writeBuildInfo'), tasks.named('stageGhidraLicense')
+    archiveFileName = "ghidra_${ghidraVersion}_${extensionName}_${project.version}.zip"
+    includeEmptyDirs = false
+    from(layout.buildDirectory.dir('xenon-language')) { into "${extensionName}/data/languages" }
+    from(generated) { into extensionName }
+    // Ghidra's default packaging copies the project tree. Keep only runtime files.
+    eachFile { details ->
+        def prefix = extensionName + '/'
+        if (!details.path.startsWith(prefix) || !allowedEntry(details.path.substring(prefix.length()))) {
+            details.exclude()
+        }
+    }
+    doLast {
+        def archive = archiveFile.get().asFile
+        new ZipFile(archive).withCloseable { zip ->
+            def names = zip.entries().collect { it.name }.findAll { !it.endsWith('/') }
+            ['extension.properties', 'Module.manifest', 'LICENSE', 'XENON360_BUILD.json',
+             'lib/XenonVMX128.jar', 'data/languages/xenon_64_isa_altivec_be.sla',
+             'data/languages/xenon_64_isa_altivec_be.slaspec', 'licenses/LICENSE-GHIDRA.txt'].each {
+                if (!names.contains("${extensionName}/${it}".toString())) {
+                    throw new GradleException("Extension archive is missing ${it}")
+                }
+            }
+            if (names.any { !allowedEntry(it.substring(extensionName.length() + 1)) }) {
+                throw new GradleException('Unexpected file in the extension archive.')
+            }
+        }
+        new File(archive.parentFile, archive.name + '.sha256').setText(digest(archive) + '  ' + archive.name + '\n', 'UTF-8')
+        logger.lifecycle("Extension ZIP: ${archive}")
+    }
+}
+
+// Smoke tests use a disposable Ghidra settings directory, never the user's installation.
+def smokeRoot = layout.buildDirectory.dir('smoke')
+def smokeProperties = [
+    'java.system.class.loader': 'ghidra.GhidraClassLoader',
+    'java.awt.headless': 'true', 'file.encoding': 'UTF-8',
+    'application.settingsdir': smokeRoot.get().dir('settings').asFile.absolutePath,
+    'application.cachedir': smokeRoot.get().dir('cache').asFile.absolutePath,
+    'application.tempdir': smokeRoot.get().dir('temp').asFile.absolutePath
+]
+tasks.register('prepareSmokeTest', JavaExec) {
+    dependsOn tasks.named('buildExtension'), tasks.named('testClasses')
+    classpath = files(utilityJar) + sourceSets.test.output + sourceSets.main.output
+    mainClass = 'ghidra.Ghidra'
+    systemProperties smokeProperties
+    doFirst {
+        delete smokeRoot
+        smokeRoot.get().asFile.mkdirs()
+        args = ['xenon360.xex.CreateSmokeFixture',
+                providers.gradleProperty('SMOKE_EXTENSION_ZIP').map { file(it).absolutePath }
+                    .getOrElse(tasks.named('buildExtension').get().archiveFile.get().asFile.absolutePath),
+                smokeRoot.get().asFile.absolutePath]
+    }
+}
+tasks.register('smokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Import a synthetic XEX in an isolated Ghidra instance and verify the extension.'
+    dependsOn tasks.named('prepareSmokeTest')
+    classpath = files(utilityJar)
+    mainClass = 'ghidra.Ghidra'
+    maxHeapSize = '2g'
+    systemProperties smokeProperties
+    def passFile = smokeRoot.map { it.file('result.txt') }
+    doFirst {
+        args = ['ghidra.app.util.headless.AnalyzeHeadless',
+                smokeRoot.get().dir('project').asFile.absolutePath, 'XenonSmoke',
+                '-import', smokeRoot.get().file('synthetic.xex').asFile.absolutePath,
+                '-loader', 'XenonXexLoader', '-max-cpu', '2', '-analysisTimeoutPerFile', '120',
+                '-scriptPath', file('tests').absolutePath,
+                '-postScript', 'XenonExtensionSmokeTest.java', passFile.get().asFile.absolutePath,
+                '-deleteProject', '-log', smokeRoot.get().file('headless.log').asFile.absolutePath]
+    }
+    doLast {
+        if (!passFile.get().asFile.isFile() || passFile.get().asFile.getText('UTF-8').trim() != 'PASS') {
+            throw new GradleException('Ghidra smoke test failed. See build/smoke/headless.log.')
+        }
+        logger.lifecycle('Xenon360 Ghidra smoke test passed.')
+    }
+}
+
+tasks.named('wrapper', Wrapper) {
+    gradleVersion = '9.1.0'
+    distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum = 'a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806'
+    networkTimeout = 60000
+}

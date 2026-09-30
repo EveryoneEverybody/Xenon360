@@ -1,0 +1,171 @@
+# Xbox 360 Xenon VMX128 register and indexed load/store support.
+#
+# VX128_1 register encoding:
+#   low five vector-register bits: D (instruction bits 21..25)
+#   high two vector-register bits: instruction bits 2..3
+#   instruction bits 0..1: fixed to 0b11
+#
+# v0..v31 alias the existing AltiVec/VSX storage (vs32..vs63).
+# v32..v127 are Xenon-only architectural registers.
+
+define register offset=0xA000 size=16 [
+    v32 v33 v34 v35 v36 v37 v38 v39
+    v40 v41 v42 v43 v44 v45 v46 v47
+    v48 v49 v50 v51 v52 v53 v54 v55
+    v56 v57 v58 v59 v60 v61 v62 v63
+    v64 v65 v66 v67 v68 v69 v70 v71
+    v72 v73 v74 v75 v76 v77 v78 v79
+    v80 v81 v82 v83 v84 v85 v86 v87
+    v88 v89 v90 v91 v92 v93 v94 v95
+    v96 v97 v98 v99 v100 v101 v102 v103
+    v104 v105 v106 v107 v108 v109 v110 v111
+    v112 v113 v114 v115 v116 v117 v118 v119
+    v120 v121 v122 v123 v124 v125 v126 v127
+];
+
+# 7-bit VMX128 destination/source vector operand.
+xvR: "v0" is BITS_0_3=3 & D=0 { export vs32; }
+xvR: "v1" is BITS_0_3=3 & D=1 { export vs33; }
+xvR: "v2" is BITS_0_3=3 & D=2 { export vs34; }
+xvR: "v3" is BITS_0_3=3 & D=3 { export vs35; }
+xvR: "v4" is BITS_0_3=3 & D=4 { export vs36; }
+xvR: "v5" is BITS_0_3=3 & D=5 { export vs37; }
+xvR: "v6" is BITS_0_3=3 & D=6 { export vs38; }
+xvR: "v7" is BITS_0_3=3 & D=7 { export vs39; }
+xvR: "v8" is BITS_0_3=3 & D=8 { export vs40; }
+xvR: "v9" is BITS_0_3=3 & D=9 { export vs41; }
+xvR: "v10" is BITS_0_3=3 & D=10 { export vs42; }
+xvR: "v11" is BITS_0_3=3 & D=11 { export vs43; }
+xvR: "v12" is BITS_0_3=3 & D=12 { export vs44; }
+xvR: "v13" is BITS_0_3=3 & D=13 { export vs45; }
+xvR: "v14" is BITS_0_3=3 & D=14 { export vs46; }
+xvR: "v15" is BITS_0_3=3 & D=15 { export vs47; }
+xvR: "v16" is BITS_0_3=3 & D=16 { export vs48; }
+xvR: "v17" is BITS_0_3=3 & D=17 { export vs49; }
+xvR: "v18" is BITS_0_3=3 & D=18 { export vs50; }
+xvR: "v19" is BITS_0_3=3 & D=19 { export vs51; }
+xvR: "v20" is BITS_0_3=3 & D=20 { export vs52; }
+xvR: "v21" is BITS_0_3=3 & D=21 { export vs53; }
+xvR: "v22" is BITS_0_3=3 & D=22 { export vs54; }
+xvR: "v23" is BITS_0_3=3 & D=23 { export vs55; }
+xvR: "v24" is BITS_0_3=3 & D=24 { export vs56; }
+xvR: "v25" is BITS_0_3=3 & D=25 { export vs57; }
+xvR: "v26" is BITS_0_3=3 & D=26 { export vs58; }
+xvR: "v27" is BITS_0_3=3 & D=27 { export vs59; }
+xvR: "v28" is BITS_0_3=3 & D=28 { export vs60; }
+xvR: "v29" is BITS_0_3=3 & D=29 { export vs61; }
+xvR: "v30" is BITS_0_3=3 & D=30 { export vs62; }
+xvR: "v31" is BITS_0_3=3 & D=31 { export vs63; }
+xvR: "v32" is BITS_0_3=7 & D=0 { export v32; }
+xvR: "v33" is BITS_0_3=7 & D=1 { export v33; }
+xvR: "v34" is BITS_0_3=7 & D=2 { export v34; }
+xvR: "v35" is BITS_0_3=7 & D=3 { export v35; }
+xvR: "v36" is BITS_0_3=7 & D=4 { export v36; }
+xvR: "v37" is BITS_0_3=7 & D=5 { export v37; }
+xvR: "v38" is BITS_0_3=7 & D=6 { export v38; }
+xvR: "v39" is BITS_0_3=7 & D=7 { export v39; }
+xvR: "v40" is BITS_0_3=7 & D=8 { export v40; }
+xvR: "v41" is BITS_0_3=7 & D=9 { export v41; }
+xvR: "v42" is BITS_0_3=7 & D=10 { export v42; }
+xvR: "v43" is BITS_0_3=7 & D=11 { export v43; }
+xvR: "v44" is BITS_0_3=7 & D=12 { export v44; }
+xvR: "v45" is BITS_0_3=7 & D=13 { export v45; }
+xvR: "v46" is BITS_0_3=7 & D=14 { export v46; }
+xvR: "v47" is BITS_0_3=7 & D=15 { export v47; }
+xvR: "v48" is BITS_0_3=7 & D=16 { export v48; }
+xvR: "v49" is BITS_0_3=7 & D=17 { export v49; }
+xvR: "v50" is BITS_0_3=7 & D=18 { export v50; }
+xvR: "v51" is BITS_0_3=7 & D=19 { export v51; }
+xvR: "v52" is BITS_0_3=7 & D=20 { export v52; }
+xvR: "v53" is BITS_0_3=7 & D=21 { export v53; }
+xvR: "v54" is BITS_0_3=7 & D=22 { export v54; }
+xvR: "v55" is BITS_0_3=7 & D=23 { export v55; }
+xvR: "v56" is BITS_0_3=7 & D=24 { export v56; }
+xvR: "v57" is BITS_0_3=7 & D=25 { export v57; }
+xvR: "v58" is BITS_0_3=7 & D=26 { export v58; }
+xvR: "v59" is BITS_0_3=7 & D=27 { export v59; }
+xvR: "v60" is BITS_0_3=7 & D=28 { export v60; }
+xvR: "v61" is BITS_0_3=7 & D=29 { export v61; }
+xvR: "v62" is BITS_0_3=7 & D=30 { export v62; }
+xvR: "v63" is BITS_0_3=7 & D=31 { export v63; }
+xvR: "v64" is BITS_0_3=11 & D=0 { export v64; }
+xvR: "v65" is BITS_0_3=11 & D=1 { export v65; }
+xvR: "v66" is BITS_0_3=11 & D=2 { export v66; }
+xvR: "v67" is BITS_0_3=11 & D=3 { export v67; }
+xvR: "v68" is BITS_0_3=11 & D=4 { export v68; }
+xvR: "v69" is BITS_0_3=11 & D=5 { export v69; }
+xvR: "v70" is BITS_0_3=11 & D=6 { export v70; }
+xvR: "v71" is BITS_0_3=11 & D=7 { export v71; }
+xvR: "v72" is BITS_0_3=11 & D=8 { export v72; }
+xvR: "v73" is BITS_0_3=11 & D=9 { export v73; }
+xvR: "v74" is BITS_0_3=11 & D=10 { export v74; }
+xvR: "v75" is BITS_0_3=11 & D=11 { export v75; }
+xvR: "v76" is BITS_0_3=11 & D=12 { export v76; }
+xvR: "v77" is BITS_0_3=11 & D=13 { export v77; }
+xvR: "v78" is BITS_0_3=11 & D=14 { export v78; }
+xvR: "v79" is BITS_0_3=11 & D=15 { export v79; }
+xvR: "v80" is BITS_0_3=11 & D=16 { export v80; }
+xvR: "v81" is BITS_0_3=11 & D=17 { export v81; }
+xvR: "v82" is BITS_0_3=11 & D=18 { export v82; }
+xvR: "v83" is BITS_0_3=11 & D=19 { export v83; }
+xvR: "v84" is BITS_0_3=11 & D=20 { export v84; }
+xvR: "v85" is BITS_0_3=11 & D=21 { export v85; }
+xvR: "v86" is BITS_0_3=11 & D=22 { export v86; }
+xvR: "v87" is BITS_0_3=11 & D=23 { export v87; }
+xvR: "v88" is BITS_0_3=11 & D=24 { export v88; }
+xvR: "v89" is BITS_0_3=11 & D=25 { export v89; }
+xvR: "v90" is BITS_0_3=11 & D=26 { export v90; }
+xvR: "v91" is BITS_0_3=11 & D=27 { export v91; }
+xvR: "v92" is BITS_0_3=11 & D=28 { export v92; }
+xvR: "v93" is BITS_0_3=11 & D=29 { export v93; }
+xvR: "v94" is BITS_0_3=11 & D=30 { export v94; }
+xvR: "v95" is BITS_0_3=11 & D=31 { export v95; }
+xvR: "v96" is BITS_0_3=15 & D=0 { export v96; }
+xvR: "v97" is BITS_0_3=15 & D=1 { export v97; }
+xvR: "v98" is BITS_0_3=15 & D=2 { export v98; }
+xvR: "v99" is BITS_0_3=15 & D=3 { export v99; }
+xvR: "v100" is BITS_0_3=15 & D=4 { export v100; }
+xvR: "v101" is BITS_0_3=15 & D=5 { export v101; }
+xvR: "v102" is BITS_0_3=15 & D=6 { export v102; }
+xvR: "v103" is BITS_0_3=15 & D=7 { export v103; }
+xvR: "v104" is BITS_0_3=15 & D=8 { export v104; }
+xvR: "v105" is BITS_0_3=15 & D=9 { export v105; }
+xvR: "v106" is BITS_0_3=15 & D=10 { export v106; }
+xvR: "v107" is BITS_0_3=15 & D=11 { export v107; }
+xvR: "v108" is BITS_0_3=15 & D=12 { export v108; }
+xvR: "v109" is BITS_0_3=15 & D=13 { export v109; }
+xvR: "v110" is BITS_0_3=15 & D=14 { export v110; }
+xvR: "v111" is BITS_0_3=15 & D=15 { export v111; }
+xvR: "v112" is BITS_0_3=15 & D=16 { export v112; }
+xvR: "v113" is BITS_0_3=15 & D=17 { export v113; }
+xvR: "v114" is BITS_0_3=15 & D=18 { export v114; }
+xvR: "v115" is BITS_0_3=15 & D=19 { export v115; }
+xvR: "v116" is BITS_0_3=15 & D=20 { export v116; }
+xvR: "v117" is BITS_0_3=15 & D=21 { export v117; }
+xvR: "v118" is BITS_0_3=15 & D=22 { export v118; }
+xvR: "v119" is BITS_0_3=15 & D=23 { export v119; }
+xvR: "v120" is BITS_0_3=15 & D=24 { export v120; }
+xvR: "v121" is BITS_0_3=15 & D=25 { export v121; }
+xvR: "v122" is BITS_0_3=15 & D=26 { export v122; }
+xvR: "v123" is BITS_0_3=15 & D=27 { export v123; }
+xvR: "v124" is BITS_0_3=15 & D=28 { export v124; }
+xvR: "v125" is BITS_0_3=15 & D=29 { export v125; }
+xvR: "v126" is BITS_0_3=15 & D=30 { export v126; }
+xvR: "v127" is BITS_0_3=15 & D=31 { export v127; }
+
+# Xenia models lvx128/stvx128 with the same indexed effective-address
+# behavior as lvx/stvx: RA==0 contributes zero and the address is aligned
+# down to a 16-byte boundary.
+:lvx128 xvR, RA_OR_ZERO, RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=3 & BITS_4_5=0
+{
+    ea:$(REGISTER_SIZE) = (RA_OR_ZERO + RB) & 0xfffffffffffffff0;
+    xvR = *[ram]:16 ea;
+}
+
+:stvx128 xvR, RA_OR_ZERO, RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=7 & BITS_4_5=0
+{
+    ea:$(REGISTER_SIZE) = (RA_OR_ZERO + RB) & 0xfffffffffffffff0;
+    *[ram]:16 ea = xvR;
+}

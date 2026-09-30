@@ -1,0 +1,19 @@
+* text=auto
+.gitattributes text eol=lf
+.gitignore text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.gradle text eol=lf
+*.java text eol=lf
+*.yml text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.sinc text eol=lf
+*.slaspec text eol=lf
+*.ldefs text eol=lf
+*.pspec text eol=lf
+*.cspec text eol=lf
+*.properties text eol=lf
+*.manifest text eol=lf
+*.jar binary

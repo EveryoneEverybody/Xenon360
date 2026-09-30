@@ -1,0 +1,77 @@
+name: Build and test
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: xenon source
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: xenon source
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: python3 tests/download_ghidra.py
+      - run: ./gradlew buildExtension --console=plain
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: extension
+          path: xenon source/dist/*.zip*
+          if-no-files-found: error
+
+  platforms:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: xenon source
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: xenon source
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: extension
+          path: xenon source/incoming
+      - run: python tests/download_ghidra.py
+        if: runner.os == 'Windows'
+        shell: cmd
+      - run: python3 tests/download_ghidra.py
+        if: runner.os != 'Windows'
+      - name: Build Ghidra native components (macOS)
+        if: runner.os == 'macOS'
+        run: ./gradlew -p "$GHIDRA_INSTALL_DIR/support/gradle" buildNatives --console=plain
+      - name: Build and test the shared ZIP (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: gradlew.bat buildExtension smokeTest -PSMOKE_EXTENSION_ZIP=incoming/ghidra_12.1.4_XenonVMX128_0.7.0.zip --console=plain
+      - name: Build and test the shared ZIP (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew buildExtension smokeTest -PSMOKE_EXTENSION_ZIP=incoming/ghidra_12.1.4_XenonVMX128_0.7.0.zip --console=plain
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        if: always()
+        with:
+          name: test-${{ matrix.os }}
+          path: |
+            xenon source/build/smoke/headless.log
+            xenon source/build/smoke/result.txt
+            xenon source/dist/*.zip.sha256
+          if-no-files-found: ignore

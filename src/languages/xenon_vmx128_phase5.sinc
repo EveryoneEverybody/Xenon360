@@ -1,0 +1,21 @@
+# Additional Xbox 360 Xenon VMX128 rounding and indexed store forms.
+
+# VX128_3 round toward +Infinity.
+:vrfip128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=59
+{
+    xvD = vectorRoundToFloatingPointIntegerTowardPluInfinity(xvB);
+}
+
+# VX128_1 store-vector-right indexed. Reuse the partial-store userop,
+# but with the extended v0..v127 source register namespace.
+:stvrx128 xvR,RA_OR_ZERO,RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=21 & BITS_4_5=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + RB;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    old_block:16 = *[ram]:16 aligned;
+    new_block:16 = xenon_stvrx_partial(old_block,xvR,eb);
+    *[ram]:16 aligned = new_block;
+}

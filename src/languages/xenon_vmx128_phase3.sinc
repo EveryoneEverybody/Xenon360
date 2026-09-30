@@ -1,0 +1,201 @@
+# Additional Xbox 360 Xenon VMX128 arithmetic, comparison, conversion,
+# packing, and indexed memory forms.
+#
+# Reuse Ghidra 12.1.2's existing AltiVec p-code operations whenever the Xenon
+# instruction has the same element-level behavior with an extended register
+# namespace. Xenon-specific D3D pack/unpack behavior, compare-record side
+# effects, and partial store-right behavior remain named userops so they are not
+# silently replaced with guessed semantics.
+
+define pcodeop xenon_vupkd3d128;
+define pcodeop xenon_vpkd3d128;
+define pcodeop xenon_vmx128_record;
+define pcodeop xenon_stvrx_partial;
+
+# VX128 multiply-add forms. Xenon reuses the old destination as an input:
+# vmaddfp128  VD = (VA * VB) + VD
+# vmaddcfp128 VD = (VA * VD) + VB
+:vmaddfp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=3 & XENON_BIT_4=1
+{
+    xvD = vectorMultiplyAddFloatingPoint(xvA,xvB,xvD);
+}
+
+:vmaddcfp128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=4 & XENON_BIT_4=1
+{
+    xvD = vectorMultiplyAddFloatingPoint(xvA,xvD,xvB);
+}
+
+# VX128_3 one-source floating-point estimates / unpack / conversions.
+:vrefp128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=99
+{
+    xvD = vectorReciprocalEstimateFloatingPoint(xvB);
+}
+
+:vupkd3d128 xvD,xvB,A_BITS
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=127
+{
+    xvD = xenon_vupkd3d128(xvB,A_BITS:1);
+}
+
+:vrsqrtefp128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=103
+{
+    xvD = vectorReciprocalSquareRootEstimateFloatingPoint(xvB);
+}
+
+:vcuxwfp128 xvD,xvB,A_BITS
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=47
+{
+    xvD = vectorConvertFromUnsignedFixedPointWord(xvB,A_BITS:1);
+}
+
+:vcfpsxws128 xvD,xvB,A_BITS
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=35
+{
+    xvD = vectorConvertToSignedFixedPointWordSaturate(xvB,A_BITS:1);
+}
+
+:vlogefp128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=111
+{
+    xvD = vectorLog2EstimateFloatingPoint(xvB);
+}
+
+:vexptefp128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_4_10=107
+{
+    xvD = vector2RaisedToTheExponentEstimateFloatingPoint(xvB);
+}
+
+# VX128 arithmetic/logical forms.
+:vupkhsb128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_6_9=14 & XENON_BIT_4=0
+{
+    xvD = vectorUnpackHighSignedByte(xvB);
+}
+
+:vsrw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=7 & XENON_BIT_4=1
+{
+    xvD = vectorShiftRightWord(xvA,xvB);
+}
+
+:vmaxfp128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=10 & XENON_BIT_4=0
+{
+    xvD = vectorMaximumFloatingPoint(xvA,xvB);
+}
+
+:vmrglw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=13 & XENON_BIT_4=0
+{
+    xvD = vectorMergeLowWord(xvA,xvB);
+}
+
+:vslw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=3 & XENON_BIT_4=1
+{
+    xvD = vectorShiftLeftIntegerWord(xvA,xvB);
+}
+
+:vand128 xvD,xvA,xvB
+    is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=8 & XENON_BIT_4=1
+{
+    xvD = xvA & xvB;
+}
+
+# VX128_R compare forms. In this encoding bit 6 is the record bit and bits
+# 7..9 are the fixed extended opcode. Reuse XENON_BITS_6_9 so no additional
+# token-field patch is required: even values are non-record forms, odd values
+# are record forms. The vector result uses Ghidra's existing AltiVec compare
+# semantics. Record forms additionally call an opaque side-effect userop so a
+# CR update is not silently discarded (stock Ghidra leaves equivalent CR6
+# behavior as TODO for several AltiVec record compares).
+:vcmpeqfp128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=0 & XENON_BIT_4=0
+{
+    xvD = vectorCompareEqualToFloatingPoint(xvA,xvB);
+}
+
+:vcmpeqfp128. xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=1 & XENON_BIT_4=0
+{
+    xvD = vectorCompareEqualToFloatingPoint(xvA,xvB);
+    xenon_vmx128_record(xvD);
+}
+
+:vcmpgefp128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=2 & XENON_BIT_4=0
+{
+    xvD = vectorCompareGreaterThanOrEqualToFloatingPoint(xvA,xvB);
+}
+
+:vcmpgefp128. xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=3 & XENON_BIT_4=0
+{
+    xvD = vectorCompareGreaterThanOrEqualToFloatingPoint(xvA,xvB);
+    xenon_vmx128_record(xvD);
+}
+
+:vcmpgtfp128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=4 & XENON_BIT_4=0
+{
+    xvD = vectorCompareGreaterThanFloatingPoint(xvA,xvB);
+}
+
+:vcmpgtfp128. xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=5 & XENON_BIT_4=0
+{
+    xvD = vectorCompareGreaterThanFloatingPoint(xvA,xvB);
+    xenon_vmx128_record(xvD);
+}
+
+:vcmpequw128 xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=8 & XENON_BIT_4=0
+{
+    xvD = vectorCompareEqualToUnsignedWord(xvA,xvB);
+}
+
+:vcmpequw128. xvD,xvA,xvB
+    is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=9 & XENON_BIT_4=0
+{
+    xvD = vectorCompareEqualToUnsignedWord(xvA,xvB);
+    xenon_vmx128_record(xvD);
+}
+
+# VX128_4 D3D pack. IMM is the five-bit x/y control field and z occupies
+# bits 6..7. Include the old destination as a conservative architectural input
+# to the opaque pack userop rather than discarding possible insert semantics.
+:vpkd3d128 xvD,xvB,A_BITS,XENON_BITS_6_7
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_6_7 & XENON_BITS_8_10=6 & BITS_4_5=1
+{
+    xvD = xenon_vpkd3d128(xvD,xvB,A_BITS:1,XENON_BITS_6_7:1);
+}
+
+# VX128_1 store-vector-element-word. The effective-address and memory-write
+# shape is the same as Ghidra's existing AltiVec stvewx model; only the source
+# register namespace is extended to v0..v127.
+:stvewx128 xvR,RA_OR_ZERO,RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=6 & BITS_4_5=0
+{
+    EA:$(REGISTER_SIZE) = (RA_OR_ZERO + RB) & 0xfffffffffffffffc;
+    *[ram]:4 EA = storeVectorElementWordIndexed(xvR,RA_OR_ZERO,RB);
+}
+
+# Cell/VMX store-vector-right indexed. This is a standard AltiVec/Cell form,
+# not VMX128, but the derived Ghidra 12.1.2 language does not decode the one
+# required form. Preserve aligned memory input/output and the byte offset
+# through an opaque partial-store userop, mirroring the phase-2 stvlx model.
+:stvrx vrS,RA_OR_ZERO,B
+    is OP=31 & vrS & RA_OR_ZERO & B & XOP_1_10=679 & Rc=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + B;
+    eb:1 = ea[0,4];
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    old_block:16 = *[ram]:16 aligned;
+    new_block:16 = xenon_stvrx_partial(old_block,vrS,eb);
+    *[ram]:16 aligned = new_block;
+}
