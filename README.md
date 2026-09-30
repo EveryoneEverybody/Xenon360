@@ -4,33 +4,58 @@
 
 # Xenon360
 
-Xenon360 adds Xbox 360 executable support to Ghidra: an XEX/XEXP loader, a Xenon PowerPC/VMX128 language, import naming, native PDB/XDB symbols, and automatic compiler-helper modeling.
+Xenon360 is a **Ghidra 12.1.4** extension for Xbox 360 executable analysis.
+
+**Current release:** Xenon360 v0.7.0
+
+**Supported Ghidra version:** 12.1.4
 
 Xenon360 is an independent open-source project. It is not affiliated with, sponsored by, or endorsed by Microsoft. Xbox and Xbox 360 are trademarks of Microsoft.
 
+## Features
+
+- XEX0, XEX?, XEX%, XEX-, XEX1, XEX2, and XEXP/DELTA loading
+- NONE, BASIC, and NORMAL/LZX image reconstruction
+- Supported retail and development encryption paths
+- Xenon PowerPC/VMX128 language support
+- Import naming for common Xbox 360 system modules
+- Native PDB/XDB symbol loading through Ghidra's Universal PDB support
+- Automatic compiler-helper modeling before normal Auto Analysis
+- One extension package for Windows, Linux, and macOS
+
 ## Install
 
-Use the extension ZIP built for your Ghidra version. In Ghidra's project window, open **File > Install Extensions**, click **+**, and select the ZIP. Restart Ghidra, import your executable using **Xenon360 XEX**, and run Auto Analysis.
+Xenon360 v0.7.0 currently targets **Ghidra 12.1.4**. Other Ghidra versions have not been packaged or validated.
 
-No build tools, PowerShell, or follow-up repair scripts are required to use the extension. The ZIP contains Java classes and language data, not host-specific executables.
+1. Download `ghidra_12.1.4_XenonVMX128_0.7.0.zip` from the v0.7.0 release.
+2. In Ghidra 12.1.4, open **File > Install Extensions**.
+3. Click **+** and select the Xenon360 ZIP.
+4. Restart Ghidra.
+5. Import an Xbox 360 executable with **Xenon360 XEX** and run normal Auto Analysis.
 
-For XEXP patches, select the matching source executable with the **Base XEX** picker. For native symbols, use the **PDB/XDB** picker. The default `public-symbols` mode loads types and public symbols; `all` enables Ghidra's full Universal PDB analysis.
+For XEXP patches, choose the matching source executable with the **Base XEX** picker. For native symbols, use the **PDB/XDB** picker. The default `public-symbols` mode loads types and public symbols; `all` enables Ghidra's full Universal PDB analysis.
 
-## Supported formats
+## Analysis
 
-XEX0, XEX?, XEX%, XEX-, XEX1, XEX2, and XEXP/DELTA are supported, including NONE, BASIC, and NORMAL/LZX reconstruction and the supported retail/development encryption variants.
+The Xenon language ID is:
 
-The language ID is `PowerPC:BE:64:Xenon-VMX128-32addr`. The module remains named `XenonVMX128` to preserve existing project bindings.
+```text
+PowerPC:BE:64:Xenon-VMX128-32addr
+```
 
-Unknown imports retain deterministic module-and-ordinal names. Conflicting legacy ordinal observations are not assigned a guessed name. Native symbol loading checks GUID, age, processor identity, and file integrity before application.
+The Ghidra module remains named `XenonVMX128` to preserve existing project bindings.
 
-## Ghidra on macOS
+Unknown imports retain deterministic module-and-ordinal names. Conflicting legacy ordinal observations are left unnamed rather than assigned a guessed export. Native symbol loading checks GUID, age, processor identity, and file integrity before application.
 
-Use a working Ghidra installation with its native components built for your Mac. Ghidra 12.1.4 does not bundle those Mac binaries. Follow Ghidra's **Getting Started > Building Native Components** instructions once when setting up Ghidra. The Xenon360 ZIP itself is unchanged across platforms.
+## macOS
+
+Xenon360 uses the same extension ZIP on all supported host platforms.
+
+Ghidra 12.1.4 does not include all required native components in its macOS distribution. Build the Ghidra native components once using Ghidra's **Getting Started > Building Native Components** instructions before using Xenon360 on macOS.
 
 ## Build from source
 
-Requirements: Ghidra 12.1.x and JDK 21 or newer. The same Gradle build is used on Windows, Linux, and macOS.
+Source builds currently target **Ghidra 12.1.4** and require JDK 21 or newer.
 
 Windows:
 
@@ -44,29 +69,33 @@ Linux and macOS:
 ./gradlew -PGHIDRA_INSTALL_DIR=/path/to/ghidra_12.1.4_PUBLIC buildExtension
 ```
 
-`GHIDRA_INSTALL_DIR` may also be set as an environment variable. Set `JAVA_HOME` to select a JDK. Paths containing spaces must be quoted.
+`GHIDRA_INSTALL_DIR` may also be set as an environment variable. The build runs the parser, patch, import-name, and language checks and produces:
 
-The build prepares the Xenon language, compiles the loader, runs the parser/patch/import-name tests, and creates `dist/ghidra_<version>_XenonVMX128_0.7.0.zip` with a SHA-256 checksum file. It does not change your installed extension or Ghidra projects.
+```text
+dist/ghidra_12.1.4_XenonVMX128_0.7.0.zip
+```
 
-The wrapper downloads Gradle 9.1.0 on first use and verifies its SHA-256 checksum. Later builds use the cached distribution. No Xbox SDK or game files are needed. An offline machine needs the pinned Gradle distribution cached or installed in advance; `--offline` does not download the wrapper distribution for you.
+with a matching SHA-256 checksum file.
 
 ## Tests
 
-`buildExtension` runs the standalone regression tests and checks language preparation with both LF and CRLF line endings. To also import a synthetic XEX in a disposable Ghidra instance, run:
+The build includes standalone regression tests plus a synthetic XEX smoke test that exercises import, Auto Analysis, compiler-helper modeling, VMX128 decoding, and native decompilation.
+
+Run the full smoke test with:
 
 ```sh
-./gradlew -PGHIDRA_INSTALL_DIR=/path/to/ghidra buildExtension smokeTest
+./gradlew -PGHIDRA_INSTALL_DIR=/path/to/ghidra_12.1.4_PUBLIC buildExtension smokeTest
 ```
 
-Use `gradlew.bat` on Windows. The smoke test installs only inside `build/smoke`, verifies automatic helper modeling, and never runs a repair script. Its logs are kept there. This does not replace visual testing of the import dialogs or analysis of real executables.
+Use `gradlew.bat` on Windows.
 
 ## Source handling
 
-Xenon360 does not execute game code or modify source executables. Patches are reconstructed in memory.
+Xenon360 does not execute game code or modify source executables. XEXP patches are reconstructed in memory.
 
 The repository and release package do not include game executables, game code, game symbols, Xbox SDK files, or other proprietary runtime content. Users supply their own XEX/XEXP files and, when available, their own PDB/XDB symbol files.
 
-Signature and hash checks are recorded as diagnostics; older integrity schemes are not treated as modern XEX2 validation.
+Signature and hash checks are recorded as diagnostics. Older integrity schemes are not treated as modern XEX2 validation.
 
 Third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), with license texts under [licenses](licenses/).
 
