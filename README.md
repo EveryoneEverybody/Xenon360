@@ -4,7 +4,7 @@
 
 # Xenon360
 
-Xenon360 is a **Ghidra 12.1.4** extension for Xbox 360 executable analysis.
+Xenon360 is a Ghidra extension for Xbox 360 executable analysis.
 
 **Current release:** Xenon360 v0.7.0
 
