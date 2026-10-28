@@ -18,7 +18,7 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
 /** Models standard Xenon compiler save helpers before normal Auto Analysis. */
-final class XenonCompilerHelperBootstrap {
+public final class XenonCompilerHelperBootstrap {
     private static final int FULL_SAVE_REGISTERS = 18;
     private static final int CALLABLE_SAVE_ENTRIES = 16;
     private static final int SAVE_BYTES = (FULL_SAVE_REGISTERS + 2) * 4;
@@ -32,18 +32,21 @@ final class XenonCompilerHelperBootstrap {
         "  ]]></body></pcode>\n" +
         "</callfixup>";
 
-    record Result(int families, int entries, int createdFunctions) {}
+    public record Result(int families, int entries, int createdFunctions, int withheldFamilies) {}
     private XenonCompilerHelperBootstrap() {}
 
-    static Result apply(Program program, TaskMonitor monitor)
+    public static Result apply(Program program, TaskMonitor monitor)
             throws Exception {
         List<Address> starts = findSaveFamilies(program, monitor);
-        if (starts.isEmpty()) return new Result(0, 0, 0);
+        if (starts.isEmpty()) return new Result(0, 0, 0, 0);
 
         try {
-            SpecExtension extension = new SpecExtension(program);
-            extension.testExtensionDocument(FIXUP_XML);
-            extension.addReplaceCompilerSpecExtension(FIXUP_XML, monitor);
+            if (program.getCompilerSpec().getPcodeInjectLibrary().getPayload(
+                    ghidra.program.model.lang.InjectPayload.CALLFIXUP_TYPE, FIXUP_NAME) == null) {
+                SpecExtension extension = new SpecExtension(program);
+                extension.testExtensionDocument(FIXUP_XML);
+                extension.addReplaceCompilerSpecExtension(FIXUP_XML, monitor);
+            }
         }
         catch (Exception ex) {
             throw new IllegalStateException("Unable to install Xenon compiler-helper callfixup", ex);
@@ -52,10 +55,13 @@ final class XenonCompilerHelperBootstrap {
         FunctionManager fm = program.getFunctionManager();
         int modeled = 0;
         int created = 0;
+        int withheld = 0;
 
         for (Address start : starts) {
             monitor.checkCancelled();
             Address end = start.add(SAVE_BYTES - 1L);
+            // A byte match is not permission to steal ownership or shrink user functions.
+            if (!safeFamily(program, start, end)) { withheld++; continue; }
             DisassembleCommand disassemble =
                 new DisassembleCommand(start, new AddressSet(start, end), true);
             disassemble.enableCodeAnalysis(false);
@@ -90,7 +96,25 @@ final class XenonCompilerHelperBootstrap {
                 modeled++;
             }
         }
-        return new Result(starts.size(), modeled, created);
+        return new Result(starts.size(), modeled, created, withheld);
+    }
+
+    private static boolean safeFamily(Program program, Address start, Address end) {
+        if (program.getListing().getDefinedData(new AddressSet(start, end), true).hasNext()) return false;
+        FunctionManager fm = program.getFunctionManager();
+        AddressSet family = new AddressSet(start, end);
+        for (int i=0;i<SAVE_BYTES;i+=4) {
+            Address at=start.add(i);
+            var instruction=program.getListing().getInstructionContaining(at);
+            if(instruction!=null && (!instruction.getAddress().equals(at)||instruction.getLength()!=4)) return false;
+            Function owner=fm.getFunctionContaining(at);
+            if(owner==null) continue;
+            boolean ours=FIXUP_NAME.equals(owner.getCallFixup()) && owner.getSymbol().getSource()!=SourceType.USER_DEFINED &&
+                owner.getSymbol().getSource()!=SourceType.IMPORTED;
+            if(!ours && owner.getSymbol().getSource()!=SourceType.DEFAULT) return false;
+            if(!inSaveFamily(owner.getEntryPoint(),start) || !family.contains(owner.getBody())) return false;
+        }
+        return true;
     }
     private static AddressSet singleInstruction(Address entry) {
         return new AddressSet(entry, entry.add(3));

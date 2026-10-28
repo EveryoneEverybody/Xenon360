@@ -187,15 +187,19 @@ define pcodeop xenon_stvrx_partial;
 
 # Cell/VMX store-vector-right indexed. This is a standard AltiVec/Cell form,
 # not VMX128, but the derived Ghidra 12.1.2 language does not decode the one
-# required form. Preserve aligned memory input/output and the byte offset
-# through an opaque partial-store userop, mirroring the phase-2 stvlx model.
+# required form. Native p-code preserves untouched bytes; an aligned store is a no-op.
 :stvrx vrS,RA_OR_ZERO,B
     is OP=31 & vrS & RA_OR_ZERO & B & XOP_1_10=679 & Rc=0
 {
     ea:$(REGISTER_SIZE) = RA_OR_ZERO + B;
     eb:1 = ea[0,4];
+    if (eb == 0) goto <done>;
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     old_block:16 = *[ram]:16 aligned;
-    new_block:16 = xenon_stvrx_partial(old_block,vrS,eb);
+    shift:1 = 128 - eb * 8;
+    mask:16 = sext(-1:8);
+    mask = mask << shift;
+    new_block:16 = (old_block & ~mask) | ((vrS << shift) & mask);
     *[ram]:16 aligned = new_block;
+    <done>
 }

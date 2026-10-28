@@ -57,6 +57,9 @@ public final class CreateSmokeFixture implements GhidraLaunchable {
         be.putInt(payload + 0x1200, 0x150d6150); // vnmsubfp128
         be.putInt(payload + 0x1204, 0x1674aa75); // vandc128
         be.putInt(payload + 0x1208, 0x1b6ce185); // vcmpbfp128
+        be.putInt(payload + 0x120c, 0x16d7bab5); // vnor128, verified v07 phase-4 vector
+        be.putInt(payload + 0x1210, 0x13c02c0f); // lvlx128
+        be.putInt(payload + 0x1214, 0x1be0fbbf); // vrfip128, verified v07 phase-5 vector
         Files.write(root.resolve("synthetic.xex"), fixture);
         Files.createDirectories(root.resolve("project"));
         System.out.println("Created isolated Xenon360 smoke-test installation.");

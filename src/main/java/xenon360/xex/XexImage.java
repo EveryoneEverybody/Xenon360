@@ -13,7 +13,7 @@ import javax.crypto.spec.SecretKeySpec;
 public final class XexImage {
     public static final int MAX_FILE_BYTES = 256 * 1024 * 1024;
     public static final int MAX_IMAGE_BYTES = 512 * 1024 * 1024;
-    public static final String VERSION = "0.7.0";
+    public static final String VERSION = "0.8.2";
     private static final long FORMAT = 0x000003ffL, ENTRY = 0x00010100L;
     private static final long BASE = 0x00010201L, IMPORTS = 0x000103ffL;
     private static final long IMPORTS_PREXEX2 = 0x000102ffL;

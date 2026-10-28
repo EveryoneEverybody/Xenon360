@@ -13,6 +13,7 @@ import docking.widgets.filechooser.GhidraFileChooser;
 import docking.widgets.filechooser.GhidraFileChooserMode;
 import docking.widgets.textfield.ElidingFilePathTextField;
 import ghidra.app.util.Option;
+import ghidra.app.util.AddressFactoryService;
 import ghidra.framework.options.SaveState;
 import ghidra.util.filechooser.ExtensionFileFilter;
 
@@ -42,7 +43,11 @@ final class XenonFilePathOption extends Option {
         this.extensions = extensions.clone();
     }
 
-    @Override
+    // Ghidra 12.2 supplies the service; 12.1.4 calls the no-argument overload.
+    public Component getCustomEditorComponent(AddressFactoryService addressFactoryService) {
+        return getCustomEditorComponent();
+    }
+
     public Component getCustomEditorComponent() {
         SaveState state = getState();
         String current = (String) getValue();

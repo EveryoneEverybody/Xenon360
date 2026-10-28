@@ -385,6 +385,7 @@ public final class XenonXexLoader extends AbstractProgramWrapperLoader {
         int resolvedRecords = 0, unresolvedRecords = 0;
         Set<String> resolvedKeys = new HashSet<>();
         Set<String> unresolvedKeys = new HashSet<>();
+        List<Map<String,Object>> evidence = new ArrayList<>();
         for (XexImage.LibraryGroup group : x.libraries) {
             monitor.checkCancelled();
             log.appendMsg("import_library=" + group.name() + ";records=" + group.records().size()
@@ -392,7 +393,20 @@ public final class XenonXexLoader extends AbstractProgramWrapperLoader {
                 + ";minimum_version=" + Long.toHexString(group.minimumVersion()));
             for (XexImage.ImportRecord record : group.records()) {
                 monitor.checkCancelled();
-                if (record.kind() > 2) { unknown++; continue; }
+                if (record.kind() > 2) {
+                    unknown++;
+                    Map<String,Object> receipt=new LinkedHashMap<>();
+                    receipt.put("binary_sha256",x.sourceSha256);
+                    receipt.put("address",xenon360.analysis.BinaryImage.address(record.address()));
+                    receipt.put("recommended_name",null);
+                    receipt.put("library",group.name());receipt.put("ordinal",record.ordinal());
+                    receipt.put("record_kind",record.kind());receipt.put("library_version",group.version());
+                    receipt.put("minimum_version",group.minimumVersion());
+                    receipt.put("identification_source","XEX import record metadata");
+                    receipt.put("resolution","UNKNOWN_IMPORT_RECORD_KIND");
+                    receipt.put("confidence","unknown");receipt.put("status","withheld");
+                    evidence.add(receipt);continue;
+                }
                 if (record.named()) namedPeRecords++;
                 String key = importKey(group.name(), record);
                 XenonOrdinalResolver.Export resolved = null;
@@ -421,6 +435,21 @@ public final class XenonXexLoader extends AbstractProgramWrapperLoader {
                         unresolvedKeys.add(key);
                     }
                 }
+
+                var decision=XenonOrdinalResolver.resolveWithEvidence(group.name(),record.ordinal(),
+                    group.version(),group.minimumVersion());
+                Map<String,Object> receipt=new LinkedHashMap<>();
+                receipt.put("binary_sha256",x.sourceSha256);
+                receipt.put("address",xenon360.analysis.BinaryImage.address(record.address()));
+                receipt.put("recommended_name",local);
+                receipt.put("library",group.name()); receipt.put("ordinal",record.ordinal());
+                receipt.put("record_kind",record.kind()); receipt.put("library_version",group.version());
+                receipt.put("minimum_version",group.minimumVersion());
+                receipt.put("identification_source",directlyNamed?"PE import name":decision.source());
+                receipt.put("resolution",directlyNamed?"RESOLVED_PE_NAME":decision.status());
+                receipt.put("confidence",directlyNamed||resolved!=null?"high":"unknown");
+                receipt.put("status",directlyNamed||resolved!=null?"applied":"fallback_applied_symbol_withheld");
+                evidence.add(receipt);
 
                 ExternalLocation location = locations.get(key);
                 if (location == null) {
@@ -478,6 +507,7 @@ public final class XenonXexLoader extends AbstractProgramWrapperLoader {
             }
         }
         info.setInt("Import library groups", x.libraries.size());
+        info.setString("Import evidence JSON",xenon360.analysis.XenonEvidence.JSON.toJson(evidence));
         info.setInt("Import slots", slots); info.setInt("Import thunk metadata seeds", thunks);
         info.setInt("Unknown import records", unknown);
         info.setInt("Named PE import records", namedPeRecords);

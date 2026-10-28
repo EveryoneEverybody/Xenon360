@@ -1,4 +1,5 @@
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import java.security.MessageDigest
 import java.util.zip.ZipFile
 
@@ -6,7 +7,7 @@ plugins {
     id 'java-library'
 }
 
-version = '0.7.0'
+version = '0.8.2'
 def installation = providers.gradleProperty('GHIDRA_INSTALL_DIR')
     .orElse(providers.environmentVariable('GHIDRA_INSTALL_DIR')).orNull
 if (!installation) {
@@ -20,11 +21,12 @@ if (!propertiesFile.isFile()) {
 def application = new Properties()
 propertiesFile.withInputStream { application.load(it) }
 ext.ghidraVersion = application.getProperty('application.version')
-if (!(ghidraVersion ==~ /12\.1\.\d+/)) {
-    throw new GradleException("This version supports Ghidra 12.1.x. Found ${ghidraVersion}.")
+def javaRelease = ['12.1.4': 21, '12.2': 25][ghidraVersion]
+if (javaRelease == null) {
+    throw new GradleException("Xenon360 0.8.2 supports Ghidra 12.1.4 and 12.2. Found ${ghidraVersion}.")
 }
-if (!JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_21)) {
-    throw new GradleException('Run Gradle with JDK 21 or newer. Set JAVA_HOME to the JDK directory.')
+if (JavaVersion.current().majorVersion.toInteger() != javaRelease) {
+    throw new GradleException("Build Ghidra ${ghidraVersion} with JDK ${javaRelease}. Set JAVA_HOME to that JDK directory.")
 }
 
 // Use the extension build shipped with the selected Ghidra installation.
@@ -41,7 +43,7 @@ def digest = { File input ->
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = 21
+    options.release = javaRelease
 }
 tasks.withType(AbstractArchiveTask).configureEach {
     preserveFileTimestamps = false
@@ -61,7 +63,8 @@ tasks.named('test') { enabled = false }
 def selfTestTasks = [
     parserTest: 'xenon360.xex.XexImageSelfTest',
     patchTest: 'xenon360.xex.XexPatchSelfTest',
-    ordinalTest: 'xenon360.xex.XenonOrdinalResolverSelfTest'
+    ordinalTest: 'xenon360.xex.XenonOrdinalResolverSelfTest',
+    havokTest: 'xenon360.havok.HavokMetadataSelfTest'
 ].collect { taskName, entryPoint ->
     tasks.register(taskName, JavaExec) {
         group = 'verification'
@@ -99,7 +102,7 @@ tasks.register('writeBuildInfo') {
         def result = [
             schema: 'xenon360/build-v1', loader_version: version.toString(),
             ghidra_version: ghidraVersion, language_id: languageId,
-            format: 'Xenon360 XEX', java_release: 21, self_tests: 'PASS',
+            format: 'Xenon360 XEX', java_release: javaRelease, self_tests: 'PASS',
             external_loader_required: false,
             supported_container_magics: ['XEX0','XEX?','XEX%','XEX-','XEX1','XEX2'],
             symbol_formats: ['PDB','XDB'],
@@ -113,7 +116,7 @@ tasks.register('writeBuildInfo') {
 }
 
 def allowedEntry = { String entry ->
-    entry in ['extension.properties', 'Module.manifest', 'README.md',
+    entry in ['extension.properties', 'Module.manifest', 'README.md', 'CHANGELOG.md',
               'THIRD_PARTY_NOTICES.md', 'LICENSE', 'NOTICE', 'XENON360_BUILD.json',
               'lib/XenonVMX128.jar'] ||
         entry ==~ /licenses\/[^\/]+\.txt/ ||
@@ -128,6 +131,13 @@ tasks.named('buildExtension', Zip) {
     includeEmptyDirs = false
     from(layout.buildDirectory.dir('xenon-language')) { into "${extensionName}/data/languages" }
     from(generated) { into extensionName }
+    // Git may check the upstream license out with CRLF on Windows. Keep the
+    // distributed bytes stable across native checkouts and LF source archives.
+    filesMatching('**/LICENSE') {
+        filter(org.apache.tools.ant.filters.FixCrLfFilter,
+            eol: org.apache.tools.ant.filters.FixCrLfFilter.CrLf.newInstance('lf'),
+            fixlast: false)
+    }
     // Ghidra's default packaging copies the project tree. Keep only runtime files.
     eachFile { details ->
         def prefix = extensionName + '/'
@@ -194,11 +204,26 @@ tasks.register('smokeTest', JavaExec) {
                 '-loader', 'XenonXexLoader', '-max-cpu', '2', '-analysisTimeoutPerFile', '120',
                 '-scriptPath', file('tests').absolutePath,
                 '-postScript', 'XenonExtensionSmokeTest.java', passFile.get().asFile.absolutePath,
+                '-postScript', 'XenonOptionCompatibilityTest.java', smokeRoot.get().file('option-compatibility.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxSemanticTest.java', smokeRoot.get().file('vmx-semantics.json').asFile.absolutePath,
+                '-postScript', 'XenonAnalysisSafetyTest.java', smokeRoot.get().file('analysis-safety.json').asFile.absolutePath,
+                '-postScript', 'XenonSwitchTest.java', smokeRoot.get().file('switch-safety.json').asFile.absolutePath,
+                '-postScript', 'XenonHalfwordSwitchTest.java', smokeRoot.get().file('halfword-safety.json').asFile.absolutePath,
                 '-deleteProject', '-log', smokeRoot.get().file('headless.log').asFile.absolutePath]
     }
     doLast {
         if (!passFile.get().asFile.isFile() || passFile.get().asFile.getText('UTF-8').trim() != 'PASS') {
             throw new GradleException('Ghidra smoke test failed. See build/smoke/headless.log.')
+        }
+        ['option-compatibility', 'vmx-semantics', 'analysis-safety', 'switch-safety', 'halfword-safety'].each { name ->
+            def receipt = smokeRoot.get().file(name + '.json').asFile
+            if (!receipt.isFile()) {
+                throw new GradleException("Missing ${name} receipt. See build/smoke/headless.log.")
+            }
+            def result = new JsonSlurper().parse(receipt)
+            if ((result.result ?: result.status) != 'PASS') {
+                throw new GradleException("${name} did not pass. See build/smoke/headless.log.")
+            }
         }
         logger.lifecycle('Xenon360 Ghidra smoke test passed.')
     }

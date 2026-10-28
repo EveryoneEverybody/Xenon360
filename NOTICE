@@ -1,0 +1,12 @@
+Xenon360
+Copyright 2026 EveryoneEverybody
+
+This product includes software derived from Ghidra, Xenia and 360tools.
+See THIRD_PARTY_NOTICES.md and licenses/ for attribution and license terms.
+Ghidra language resources are modified during the build; the upstream
+installation is not modified. Xenon VMX128 additions and encoding exclusions
+are identified in the generated language source.
+
+Third-party trademarks and affiliations
+Xbox, Xbox 360, Direct3D, and DirectX are trademarks of the Microsoft group of companies. Havok and Havok Physics are trademarks of Havok. Valve and Source are trademarks of Valve Corporation. All other trademarks are the property of their respective owners.
+Xenon360 is an independent open-source project. It is not affiliated with, sponsored by, or endorsed by Microsoft, Havok, or Valve Corporation. References to these technologies are for compatibility, identification, and technical research only.

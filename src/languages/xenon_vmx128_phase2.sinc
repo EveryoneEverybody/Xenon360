@@ -496,15 +496,42 @@ xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1
 :vpermwi128 xvD,xvB,xvPERM
     is OP=6 & xvD & xvB & xvPERM & XENON_BITS_9_10=1 & BITS_4_5=1
 {
-    xvD = xenon_vpermwi128(xvB,xvPERM);
+    source:16 = xvB;
+    word_mask:16 = zext(0xffffffff:4);
+    x:16 = (source >> ((3 - ((xvPERM >> 6) & 3)) * 32)) & word_mask;
+    y:16 = (source >> ((3 - ((xvPERM >> 4) & 3)) * 32)) & word_mask;
+    z:16 = (source >> ((3 - ((xvPERM >> 2) & 3)) * 32)) & word_mask;
+    w:16 = (source >> ((3 - (xvPERM & 3)) * 32)) & word_mask;
+    xvD = (x << 96) | (y << 64) | (z << 32) | w;
 }
 
-# VX128_4 rotate-left-immediate-and-mask-insert. The old destination is an
-# architectural input, so pass it explicitly to the opaque semantic userop.
-:vrlimi128 xvD,xvB,xvUIMM5,xvZ2
-    is OP=6 & xvD & xvB & xvUIMM5 & xvZ2 & XENON_BITS_8_10=7 & BITS_4_5=1
+# VX128_4: rotate source words left, then insert lanes selected by mask bits
+# 3..0 into the old destination. Snapshot inputs before the aliased write.
+:vrlimi128 xvD,xvB,A_BITS,XENON_BITS_6_7
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_6_7 & XENON_BITS_8_10=7 & BITS_4_5=1
 {
-    xvD = xenon_vrlimi128(xvD,xvB,xvUIMM5,xvZ2);
+    old:16 = xvD;
+    source:16 = xvB;
+    rotated:16 = source;
+    shift:1 = XENON_BITS_6_7:1 * 32;
+    if (shift == 0) goto <blend>;
+    rotated = (source << shift) | (source >> (128 - shift));
+    <blend>
+    mask:16 = zext(0:8);
+    word_mask:16 = zext(0xffffffff:4);
+    if ((A_BITS:1 & 8) == 0) goto <skip_x>;
+    mask = mask | (word_mask << 96);
+    <skip_x>
+    if ((A_BITS:1 & 4) == 0) goto <skip_y>;
+    mask = mask | (word_mask << 64);
+    <skip_y>
+    if ((A_BITS:1 & 2) == 0) goto <skip_z>;
+    mask = mask | (word_mask << 32);
+    <skip_z>
+    if ((A_BITS:1 & 1) == 0) goto <skip_w>;
+    mask = mask | word_mask;
+    <skip_w>
+    xvD = (old & ~mask) | (rotated & mask);
 }
 
 # VX128_5 shift-left-double-by-octet-immediate.
@@ -535,8 +562,7 @@ xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1
 
 # Cell/VMX partial indexed vector loads/stores are not VMX128 opcodes, but
 # are included here because Ghidra's base PowerPC language does not decode them.
-# The userops preserve the aligned memory block and byte-offset dependency
-# without inventing an incorrect byte-permutation implementation.
+# Native p-code shifts the big-endian byte lanes and preserves untouched store bytes.
 :lvlx vrD,RA_OR_ZERO,B
     is OP=31 & vrD & RA_OR_ZERO & B & XOP_1_10=519 & Rc=0
 {
@@ -544,7 +570,7 @@ xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1
     eb:1 = ea[0,4];
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     block:16 = *[ram]:16 aligned;
-    vrD = xenon_lvlx_partial(block,eb);
+    vrD = block << (eb * 8);
 }
 
 :stvlx vrS,RA_OR_ZERO,B
@@ -554,6 +580,8 @@ xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1
     eb:1 = ea[0,4];
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     old_block:16 = *[ram]:16 aligned;
-    new_block:16 = xenon_stvlx_partial(old_block,vrS,eb);
+    mask:16 = sext(-1:8);
+    mask = mask >> (eb * 8);
+    new_block:16 = (old_block & ~mask) | ((vrS >> (eb * 8)) & mask);
     *[ram]:16 aligned = new_block;
 }

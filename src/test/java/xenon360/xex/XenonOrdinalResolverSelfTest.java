@@ -67,6 +67,12 @@ public final class XenonOrdinalResolverSelfTest {
         check(XenonOrdinalResolver.resolve("xam.xex", 0x7fffffff) == null,
             "unknown ordinal must remain unresolved");
         check(XenonOrdinalResolver.resolve(null, 1) == null, "null module");
+        var evidence=XenonOrdinalResolver.resolveWithEvidence("xam.xex",0x191,0x20002400L,0x10000000L);
+        check(evidence.symbol().name().equals("XamInputGetState"),"evidence name");
+        check(evidence.libraryVersion()==0x20002400L && evidence.minimumVersion()==0x10000000L,"retain importer versions");
+        check(evidence.source().contains(XenonOrdinalResolver.SOURCE_COMMIT),"pinned mapping provenance");
+        check(XenonOrdinalResolver.resolveWithEvidence("drivers.xex",4,0xffffffffL,0).status()
+            .equals("WITHHELD_AMBIGUOUS_EXPORT_GENERATION"),"versions do not invent driver identity");
 
         System.out.println("XENON_ORDINAL_SELF_TEST_PASS checks=" + checks
             + " xam=1735 xboxkrnl=922 xbdm=255 drivers=115 withheld=4 xnet=133 xapi=5 connectx=24");

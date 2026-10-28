@@ -2,8 +2,7 @@
 # conversion, and partial vector-memory forms.
 #
 # Straightforward operations reuse Ghidra's existing AltiVec p-code semantics.
-# Partial vector-right memory behavior remains an explicit Xenon userop rather
-# than guessed semantics.
+# Partial vector memory uses native big-endian lane operations.
 
 define pcodeop xenon_lvrx_partial;
 
@@ -11,7 +10,7 @@ define pcodeop xenon_lvrx_partial;
 :vandc128 xvD,xvA,xvB
     is OP=5 & xvD & xvA & xvB & XENON_BITS_6_9=9 & XENON_BIT_4=1
 {
-    xvD = vectorLogicalAndWithComplement(xvA,xvB);
+    xvD = xvA & ~xvB;
 }
 
 # Xenon encodes the old destination as the third arithmetic input:
@@ -98,9 +97,8 @@ define pcodeop xenon_lvrx_partial;
     xvD = vectorConvertToUnsignedFixedPointWordSaturate(xvB,A_BITS:1);
 }
 
-# VX128_1 partial vector-memory forms. Reuse the aligned-memory
-# dependencies and opaque partial-load/store userops with the extended vector
-# register namespace.
+# VX128_1 partial vector-memory forms: native big-endian byte-lane shifts
+# and masked stores using the extended vector register namespace.
 :lvlx128 xvR,RA_OR_ZERO,RB
     is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=16 & BITS_4_5=0
 {
@@ -108,7 +106,22 @@ define pcodeop xenon_lvrx_partial;
     eb:1 = ea[0,4];
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     block:16 = *[ram]:16 aligned;
-    xvR = xenon_lvlx_partial(block,eb);
+    xvR = block << (eb * 8);
+}
+
+# VX128_1 load-right: the byte count is EA modulo 16. Zero count must not
+# touch memory, including when EA points just beyond an allocated buffer.
+:lvrx128 xvR,RA_OR_ZERO,RB
+    is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=17 & BITS_4_5=0
+{
+    ea:$(REGISTER_SIZE) = RA_OR_ZERO + RB;
+    eb:1 = ea[0,4];
+    xvR = zext(0:8);
+    if (eb == 0) goto <done>;
+    aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
+    block:16 = *[ram]:16 aligned;
+    xvR = block >> (128 - eb * 8);
+    <done>
 }
 
 :stvlx128 xvR,RA_OR_ZERO,RB
@@ -118,19 +131,23 @@ define pcodeop xenon_lvrx_partial;
     eb:1 = ea[0,4];
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     old_block:16 = *[ram]:16 aligned;
-    new_block:16 = xenon_stvlx_partial(old_block,xvR,eb);
+    mask:16 = sext(-1:8);
+    mask = mask >> (eb * 8);
+    new_block:16 = (old_block & ~mask) | ((xvR >> (eb * 8)) & mask);
     *[ram]:16 aligned = new_block;
 }
 
 # Standard Cell/AltiVec load-vector-right indexed. Ghidra 12.1.2's derived
-# language does not decode this form. Preserve memory and
-# offset dependencies without guessing byte-lane semantics.
+# language does not decode this form. Aligned loads produce zero without memory access.
 :lvrx vrD,RA_OR_ZERO,B
     is OP=31 & vrD & RA_OR_ZERO & B & XOP_1_10=551 & Rc=0
 {
     ea:$(REGISTER_SIZE) = RA_OR_ZERO + B;
     eb:1 = ea[0,4];
+    vrD = zext(0:8);
+    if (eb == 0) goto <done>;
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     block:16 = *[ram]:16 aligned;
-    vrD = xenon_lvrx_partial(block,eb);
+    vrD = block >> (128 - eb * 8);
+    <done>
 }

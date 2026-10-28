@@ -22,6 +22,9 @@ public class XenonExtensionSmokeTest extends GhidraScript {
             }
         }
         if (helpers != 16) { throw new IllegalStateException("Expected 16 modeled helper entries, got " + helpers); }
+        if(!currentProgram.getOptions("Xenon360").contains("Switch analysis summary")) {
+            throw new IllegalStateException("Automatic bounded switch analyzer did not run");
+        }
         var call = currentProgram.getListing().getInstructionAt(toAddr(0x82001004L));
         if (call == null || call.getFlowOverride() == FlowOverride.CALL_RETURN) {
             throw new IllegalStateException("The helper call incorrectly terminates its caller.");

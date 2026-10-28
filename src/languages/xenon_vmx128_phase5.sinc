@@ -14,8 +14,13 @@
 {
     ea:$(REGISTER_SIZE) = RA_OR_ZERO + RB;
     eb:1 = ea[0,4];
+    if (eb == 0) goto <done>;
     aligned:$(REGISTER_SIZE) = ea & 0xfffffffffffffff0;
     old_block:16 = *[ram]:16 aligned;
-    new_block:16 = xenon_stvrx_partial(old_block,xvR,eb);
+    shift:1 = 128 - eb * 8;
+    mask:16 = sext(-1:8);
+    mask = mask << shift;
+    new_block:16 = (old_block & ~mask) | ((xvR << shift) & mask);
     *[ram]:16 aligned = new_block;
+    <done>
 }
