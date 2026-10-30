@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/Xenon360_banner.png" alt="Xenon360" width="100%">
+</p>
+
 # Xenon360
 
 Xenon360 0.8.2 adds Xbox 360 executable support to **Ghidra 12.1.4 and 12.2**: an XEX/XEXP loader, a Xenon PowerPC/VMX128 language, import naming, native PDB/XDB symbols, automatic compiler-helper modeling, bounded switch recovery, and validated Havok metadata identification.
