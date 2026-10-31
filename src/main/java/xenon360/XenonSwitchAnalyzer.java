@@ -12,14 +12,14 @@ import ghidra.util.Msg;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
-/** Recover bounded MSVC byte-index and unsigned-halfword switches without trusting decompiler constants.
+/** Recover bounded byte, halfword and guarded absolute-word switches without trusting decompiler constants.
  * The unsigned guard, table address, scale and branch base are all physical instructions.
  */
 public final class XenonSwitchAnalyzer extends AbstractAnalyzer {
     public static final String NAME="Xenon360 Bounded Switch Tables";
     private record Table(Address branch,Function function,SortedSet<Address> targets,Address data,int count,int scale) {}
     public XenonSwitchAnalyzer() {
-        super(NAME,"Recover physically bounded Xenon byte and halfword switch tables while preserving owners and symbols.",AnalyzerType.BYTE_ANALYZER);
+        super(NAME,"Recover physically bounded Xenon byte, halfword and absolute-word switch tables while preserving owners and symbols.",AnalyzerType.BYTE_ANALYZER);
         setDefaultEnablement(true);setSupportsOneTimeAnalysis();
         setPriority(AnalysisPriority.DATA_TYPE_PROPOGATION.after().after());
     }
@@ -92,7 +92,7 @@ public final class XenonSwitchAnalyzer extends AbstractAnalyzer {
     @Override public boolean added(Program p,AddressSetView set,TaskMonitor monitor,MessageLog log) throws CancelledException {
         if(!set.contains(p.getMemory()))return false;
         int tx=p.startTransaction(NAME);boolean commit=false;int matched=0,extended=0,refs=0,withheld=0;
-        var evidence=new ArrayList<Map<String,Object>>();var recoveredHalfwords=new HashSet<String>();
+        var evidence=new ArrayList<Map<String,Object>>();var recoveredHalfwords=new HashSet<String>();boolean wordLimited=false;
         try {
             var branches=new ArrayList<Address>();var it=p.getListing().getInstructions(true);long inspected=0;
             while(it.hasNext()) {
@@ -134,10 +134,20 @@ public final class XenonSwitchAnalyzer extends AbstractAnalyzer {
                     if(!present){p.getReferenceManager().addMemoryReference(at,target,RefType.COMPUTED_JUMP,SourceType.ANALYSIS,-1);refs++;}
                 }
             }
+            // Preserve every prior-family decision and its budget priority. The new
+            // family only visits the original established branch list, never code
+            // recursively discovered during this invocation, and shares the cap.
+            for(var at:branches) {
+                monitor.checkCancelled();
+                if(matched>=512){wordLimited=true;break;}
+                var word=xenon360.analysis.AbsoluteWordSwitchRecovery.recover(p,at,monitor);
+                if(word!=null){matched+=word.matched();extended+=word.extended();refs+=word.references();evidence.add(word.evidence());
+                    if(word.evidence().get("status").equals("withheld_ownership_or_data"))withheld++;}
+            }
             String summary="matched="+matched+";extended="+extended+";new_references="+refs+";withheld="+withheld;
             monitor.checkCancelled();
             p.getOptions("Xenon360").setString("Switch analysis summary",summary);
-            p.getOptions("Xenon360").setBoolean("Switch scan limited",matched>512);
+            p.getOptions("Xenon360").setBoolean("Switch scan limited",matched>512||wordLimited);
             p.getOptions("Xenon360").setString("Switch evidence JSON",xenon360.analysis.XenonEvidence.JSON.toJson(evidence));
             Msg.info(this,summary);commit=true;return true;
         }catch(CancelledException ex){throw ex;}

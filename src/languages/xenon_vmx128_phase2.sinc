@@ -482,14 +482,196 @@ xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1
 :vmrghw128 xvD,xvA,xvB
     is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=12 & XENON_BIT_4=0
 {
-    xvD = vectorMergeHighWord(xvA,xvB);
+    # Native snapshots before lane extraction and one full-register commit.
+    # Keep + zero: direct slices lose high words in Ghidra 12.1.4 decompilation.
+    # See docs/vmx128-native-merges.md and the required high-p-code oracle.
+    zero:16 = zext(0:4);
+    a:16 = xvA + zero;
+    b:16 = xvB + zero;
+    a0:4 = a[96,32];
+    a1:4 = a[64,32];
+    b0:4 = b[96,32];
+    b1:4 = b[64,32];
+    local result:16;
+    result[96,32] = a0;
+    result[64,32] = b0;
+    result[32,32] = a1;
+    result[0,32] = b1;
+    xvD = result;
 }
 
 # VX128_2 byte permutation. VC is a three-bit vector register.
 :vperm128 xvD,xvA,xvB,xvC
     is OP=5 & xvD & xvA & xvB & xvC & BIT_9=0 & XENON_BIT_4=0
 {
-    xvD = xenon_vperm128(xvA,xvB,xvC);
+    # Guest-order A||B, one 256-bit logical selection per output byte.
+    # Keep all ADD-zero snapshots: they protect optimized alias semantics.
+    a:16 = xvA + 0;
+    b:16 = xvB + 0;
+    c:16 = xvC + 0;
+    local result:16;
+    aa:32 = zext(a);
+    bb:32 = zext(b);
+    table:32 = (aa << 128) | bb;
+    s0:1 = c[120,8] & 0x1f;
+    bs0:1 = (s0 ^ 31) * 8;
+    av0:32 = table >> bs0;
+    x0:1 = av0:1;
+    s1:1 = c[112,8] & 0x1f;
+    bs1:1 = (s1 ^ 31) * 8;
+    av1:32 = table >> bs1;
+    x1:1 = av1:1;
+    s2:1 = c[104,8] & 0x1f;
+    bs2:1 = (s2 ^ 31) * 8;
+    av2:32 = table >> bs2;
+    x2:1 = av2:1;
+    s3:1 = c[96,8] & 0x1f;
+    bs3:1 = (s3 ^ 31) * 8;
+    av3:32 = table >> bs3;
+    x3:1 = av3:1;
+    s4:1 = c[88,8] & 0x1f;
+    bs4:1 = (s4 ^ 31) * 8;
+    av4:32 = table >> bs4;
+    x4:1 = av4:1;
+    s5:1 = c[80,8] & 0x1f;
+    bs5:1 = (s5 ^ 31) * 8;
+    av5:32 = table >> bs5;
+    x5:1 = av5:1;
+    s6:1 = c[72,8] & 0x1f;
+    bs6:1 = (s6 ^ 31) * 8;
+    av6:32 = table >> bs6;
+    x6:1 = av6:1;
+    s7:1 = c[64,8] & 0x1f;
+    bs7:1 = (s7 ^ 31) * 8;
+    av7:32 = table >> bs7;
+    x7:1 = av7:1;
+    s8:1 = c[56,8] & 0x1f;
+    bs8:1 = (s8 ^ 31) * 8;
+    av8:32 = table >> bs8;
+    x8:1 = av8:1;
+    s9:1 = c[48,8] & 0x1f;
+    bs9:1 = (s9 ^ 31) * 8;
+    av9:32 = table >> bs9;
+    x9:1 = av9:1;
+    s10:1 = c[40,8] & 0x1f;
+    bs10:1 = (s10 ^ 31) * 8;
+    av10:32 = table >> bs10;
+    x10:1 = av10:1;
+    s11:1 = c[32,8] & 0x1f;
+    bs11:1 = (s11 ^ 31) * 8;
+    av11:32 = table >> bs11;
+    x11:1 = av11:1;
+    s12:1 = c[24,8] & 0x1f;
+    bs12:1 = (s12 ^ 31) * 8;
+    av12:32 = table >> bs12;
+    x12:1 = av12:1;
+    s13:1 = c[16,8] & 0x1f;
+    bs13:1 = (s13 ^ 31) * 8;
+    av13:32 = table >> bs13;
+    x13:1 = av13:1;
+    s14:1 = c[8,8] & 0x1f;
+    bs14:1 = (s14 ^ 31) * 8;
+    av14:32 = table >> bs14;
+    x14:1 = av14:1;
+    s15:1 = c[0,8] & 0x1f;
+    bs15:1 = (s15 ^ 31) * 8;
+    av15:32 = table >> bs15;
+    x15:1 = av15:1;
+    w0:4 = (zext(x0) << 24) | (zext(x1) << 16) | (zext(x2) << 8) | zext(x3);
+    result[96,32] = w0;
+    w1:4 = (zext(x4) << 24) | (zext(x5) << 16) | (zext(x6) << 8) | zext(x7);
+    result[64,32] = w1;
+    w2:4 = (zext(x8) << 24) | (zext(x9) << 16) | (zext(x10) << 8) | zext(x11);
+    result[32,32] = w2;
+    w3:4 = (zext(x12) << 24) | (zext(x13) << 16) | (zext(x14) << 8) | zext(x15);
+    result[0,32] = w3;
+    xvD = result;
+}
+
+# Identical-source specialization of the same instruction and operand display.
+# All seven A/B bits must match; equal low indices in different banks do not.
+:vperm128 xvD,xvA,xvB,xvC
+    is OP=5 & xvD & xvA & xvB & xvC & BIT_9=0 & XENON_BIT_4=0
+       & A=B & BITS_0_1=(XENON_BIT_5 $or (BIT_10 << 1))
+{
+    # These constraints prove identical architectural operands, not equal values.
+    # A and C are captured before the one full destination write.
+    a:16 = xvA + 0;
+    c:16 = xvC + 0;
+    local result:16;
+    s0:1 = c[120,8] & 0x0f;
+    as0:1 = (s0 ^ 15) * 8;
+    av0:16 = a >> as0;
+    x0:1 = av0:1;
+    s1:1 = c[112,8] & 0x0f;
+    as1:1 = (s1 ^ 15) * 8;
+    av1:16 = a >> as1;
+    x1:1 = av1:1;
+    s2:1 = c[104,8] & 0x0f;
+    as2:1 = (s2 ^ 15) * 8;
+    av2:16 = a >> as2;
+    x2:1 = av2:1;
+    s3:1 = c[96,8] & 0x0f;
+    as3:1 = (s3 ^ 15) * 8;
+    av3:16 = a >> as3;
+    x3:1 = av3:1;
+    s4:1 = c[88,8] & 0x0f;
+    as4:1 = (s4 ^ 15) * 8;
+    av4:16 = a >> as4;
+    x4:1 = av4:1;
+    s5:1 = c[80,8] & 0x0f;
+    as5:1 = (s5 ^ 15) * 8;
+    av5:16 = a >> as5;
+    x5:1 = av5:1;
+    s6:1 = c[72,8] & 0x0f;
+    as6:1 = (s6 ^ 15) * 8;
+    av6:16 = a >> as6;
+    x6:1 = av6:1;
+    s7:1 = c[64,8] & 0x0f;
+    as7:1 = (s7 ^ 15) * 8;
+    av7:16 = a >> as7;
+    x7:1 = av7:1;
+    s8:1 = c[56,8] & 0x0f;
+    as8:1 = (s8 ^ 15) * 8;
+    av8:16 = a >> as8;
+    x8:1 = av8:1;
+    s9:1 = c[48,8] & 0x0f;
+    as9:1 = (s9 ^ 15) * 8;
+    av9:16 = a >> as9;
+    x9:1 = av9:1;
+    s10:1 = c[40,8] & 0x0f;
+    as10:1 = (s10 ^ 15) * 8;
+    av10:16 = a >> as10;
+    x10:1 = av10:1;
+    s11:1 = c[32,8] & 0x0f;
+    as11:1 = (s11 ^ 15) * 8;
+    av11:16 = a >> as11;
+    x11:1 = av11:1;
+    s12:1 = c[24,8] & 0x0f;
+    as12:1 = (s12 ^ 15) * 8;
+    av12:16 = a >> as12;
+    x12:1 = av12:1;
+    s13:1 = c[16,8] & 0x0f;
+    as13:1 = (s13 ^ 15) * 8;
+    av13:16 = a >> as13;
+    x13:1 = av13:1;
+    s14:1 = c[8,8] & 0x0f;
+    as14:1 = (s14 ^ 15) * 8;
+    av14:16 = a >> as14;
+    x14:1 = av14:1;
+    s15:1 = c[0,8] & 0x0f;
+    as15:1 = (s15 ^ 15) * 8;
+    av15:16 = a >> as15;
+    x15:1 = av15:1;
+    w0:4 = (zext(x0) << 24) | (zext(x1) << 16) | (zext(x2) << 8) | zext(x3);
+    result[96,32] = w0;
+    w1:4 = (zext(x4) << 24) | (zext(x5) << 16) | (zext(x6) << 8) | zext(x7);
+    result[64,32] = w1;
+    w2:4 = (zext(x8) << 24) | (zext(x9) << 16) | (zext(x10) << 8) | zext(x11);
+    result[32,32] = w2;
+    w3:4 = (zext(x12) << 24) | (zext(x13) << 16) | (zext(x14) << 8) | zext(x15);
+    result[0,32] = w3;
+    xvD = result;
 }
 
 # VX128_P word permutation immediate.
@@ -542,16 +724,26 @@ xvPERM: perm is A & XENON_BITS_6_8 [ perm = A | (XENON_BITS_6_8 << 5); ] { tmp:1
 }
 
 # VX128_3 forms.
+# Five-bit signed immediate, replicated as four 32-bit words. Zero-extend
+# the completed word before placing it in the 128-bit result.
 :vspltisw128 xvD,A_BITSS
     is OP=6 & xvD & A_BITSS & XENON_BITS_4_10=119
 {
-    xvD = vectorSplatImmediateSignedWord(A_BITSS:1);
+    word:4 = A_BITSS:4;
+    lane:16 = zext(word);
+    xvD = (lane << 96) | (lane << 64) | (lane << 32) | lane;
 }
 
-:vspltw128 xvD,xvB,xvUIMM5
-    is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=115
+# Guest word zero is the most significant word. Xenia and QEMU both mask
+# the selector to two bits. Snapshot before writing for xvD == xvB.
+# See docs/vmx128-native-splats.md for pinned references and scope.
+:vspltw128 xvD,xvB,A_BITS
+    is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=115
 {
-    xvD = vectorSplatWord(xvB,xvUIMM5);
+    source:16 = xvB >> ((3 - (A_BITS:1 & 3)) * 32);
+    word:4 = source:4;
+    lane:16 = zext(word);
+    xvD = (lane << 96) | (lane << 64) | (lane << 32) | lane;
 }
 
 :vcsxwfp128 xvD,xvB,xvUIMM5

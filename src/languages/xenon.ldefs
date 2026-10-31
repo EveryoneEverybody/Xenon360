@@ -5,7 +5,7 @@
             endian="big"
             size="32"
             variant="Xenon-VMX128-64-32addr"
-            version="1.1"
+            version="1.4"
             slafile="xenon_64_isa_altivec_be.sla"
             processorspec="ppc_64.pspec"
             id="PowerPC:BE:64:Xenon-VMX128-32addr">

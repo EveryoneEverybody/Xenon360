@@ -16,15 +16,15 @@ for index in (1,2):
         if not name:continue
         dest=copy/name;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(repo/name,dest)
     subprocess.run(['bash','gradlew','--no-daemon','--console=plain','buildExtension','smokeTest'],cwd=copy,check=True)
-    archive=copy/'dist'/f'ghidra_{target}_XenonVMX128_0.8.2.zip'
+    archive=copy/'dist'/f'ghidra_{target}_XenonVMX128_0.8.3.zip'
     audit=inspect([(archive.name,archive)])
     if audit['result']!='PASS':raise RuntimeError('Distribution privacy scan failed')
     structural=check_extension(archive,target)
     tests={}
-    for name in ['option-compatibility','vmx-semantics','analysis-safety','switch-safety','halfword-safety']:
+    for name in ['option-compatibility','vmx-semantics','vmx-splats','vmx-splat-decompiler','vmx-merges','vmx-merge-decompiler','vmx-permute','vmx-permute-decompiler','vmx-permute-optimization','vmx-permute-structured','vmx-element-word','vmx-element-word-decompiler','vmx-unpack','vmx-unpack-decompiler','vmx-compare','vmx-compare-decompiler','fp-compare','fp-compare-decompiler','analysis-safety','switch-safety','halfword-safety','padded-byte-safety','absolute-word-safety']:
         value=json.loads((copy/'build/smoke'/f'{name}.json').read_text())
         if value.get('result',value.get('status'))!='PASS':raise RuntimeError('Failed native receipt')
-        tests[name]={k:v for k,v in value.items() if k in ('result','status','checks','executions','pcode_executions','userop_emulation_callbacks','assertions','fixtures','cases') and isinstance(v,(str,int))}
+        tests[name]={k:v for k,v in value.items() if k in ('result','status','checks','executions','pcode_executions','decompiler_cases','userop_emulation_callbacks','assertions','fixtures','cases') and isinstance(v,(str,int))}
     if (copy/'build/smoke/result.txt').read_text().strip()!='PASS':raise RuntimeError('Failed import receipt')
     archives.append(archive);receipts.append(dict(archive=structural,tests=tests,public_safety='PASS'))
 if archives[0].read_bytes()!=archives[1].read_bytes():raise RuntimeError('Independent builds are not byte-identical')

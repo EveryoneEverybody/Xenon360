@@ -22,9 +22,6 @@ def phase2 = { String input ->
         [':vsldoi128 xvD,xvA,xvB,xvSH4', ':vsldoi128 xvD,xvA,xvB,XENON_BITS_6_9'],
         ['is OP=4 & xvD & xvA & xvB & xvSH4 & XENON_BIT_4=1', 'is OP=4 & xvD & xvA & xvB & XENON_BITS_6_9 & XENON_BIT_4=1'],
         ['xvD = vectorShiftLeftDoubleByOctetImmediate(xvA,xvB,xvSH4);', 'xvD = vectorShiftLeftDoubleByOctetImmediate(xvA,xvB,XENON_BITS_6_9:1);'],
-        [':vspltw128 xvD,xvB,xvUIMM5', ':vspltw128 xvD,xvB,A_BITS'],
-        ['is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=115', 'is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=115'],
-        ['xvD = vectorSplatWord(xvB,xvUIMM5);', 'xvD = vectorSplatWord(xvB,A_BITS:1);'],
         [':vcsxwfp128 xvD,xvB,xvUIMM5', ':vcsxwfp128 xvD,xvB,A_BITS'],
         ['is OP=6 & xvD & xvB & xvUIMM5 & XENON_BITS_4_10=43', 'is OP=6 & xvD & xvB & A_BITS & XENON_BITS_4_10=43'],
         ['xvD = vectorConvertFromSignedFixedPointWord(xvB,xvUIMM5);', 'xvD = vectorConvertFromSignedFixedPointWord(xvB,A_BITS:1);']
@@ -66,6 +63,25 @@ tasks.register('prepareLanguage') {
         source.listFiles().findAll { it.name ==~ /xenon_vmx128.*\.sinc/ }.sort { it.name }.each { copyText(it, it.name) }
         ['xenon_64_isa_altivec_be.slaspec', 'xenon.ldefs'].each { copyText(new File(source, it), it) }
         ['ppc_64.pspec', 'ppc_64_32.cspec'].each { copyText(new File(upstream, it), it) }
+
+        // S7: fcmpu omits FPSCR.FU; optimized self-comparison can also fold
+        // equality to true for NaNs. Retain an explicit ordered guard on EQ.
+        // Match the complete bounded constructor before adding these two fixes.
+        // Keep ordered-compare exceptions and every other FP operation untouched.
+        def instructions = new File(destination, 'ppc_instructions.sinc')
+        def compare = ''':fcmpu CRFD,fA,fB\t\tis $(NOTVLE) & OP=63 & CRFD & BITS_21_22=0 & fA & fB & XOP_1_10=0 & BIT_0=0
+{
+\ttmp:1 = nan(fA) | nan(fB);
+\tfp_cc0 = (fA f< fB);
+\tfp_cc1 = (fA f> fB);
+\tfp_cc2 = (fA f== fB);
+\tCRFD = (fp_cc0 << 3) | (fp_cc1 << 2) | (fp_cc2 << 1) | tmp;\t
+}'''
+        instructions.setText(replaceOnce(instructions.getText('UTF-8'), compare,
+            compare.replace('\ttmp:1 = nan(fA) | nan(fB);',
+                '\ttmp:1 = nan(fA) | nan(fB);\n\tfp_cc3 = tmp;')
+                .replace('\tfp_cc2 = (fA f== fB);',
+                    '\tfp_cc2 = (fA f== fB) & !tmp;')), 'UTF-8')
 
         def common = new File(destination, 'ppc_common.sinc')
         def anchor = '\tBITS_6_10=(6,10)'

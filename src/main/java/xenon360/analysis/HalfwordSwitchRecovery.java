@@ -5,17 +5,19 @@ import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.util.PseudoDisassembler;
 import ghidra.program.model.address.*;
+import ghidra.program.model.data.ByteDataType;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
 import ghidra.util.task.TaskMonitor;
 
-/** Physical proof for a bounded MSVC unsigned-halfword dispatch, independent of
+/** Physical proof for bounded MSVC relative dispatches, independent of
  * decompiler completion. Called inside XenonSwitchAnalyzer's rollback transaction.
+ * Includes the terminal-NOP byte schedule; the original byte matcher stays intact.
  * No function creation, symbol changes, or reference deletion is performed here. */
 public final class HalfwordSwitchRecovery {
     private static final int MAX_CASES=512, MAX_EXTRA_BYTES=65536, MAX_TABLES=32;
     private record Table(Address branch,Address guard,Address data,Address base,Address fallback,
-                         int count,SortedSet<Address> targets) {}
+                         int count,SortedSet<Address> targets,int width,int scale) {}
     public record Result(int matched,int extended,int references,Map<String,Object> evidence) {}
     private record Edge(Address from,Address to) {}
     private record Plan(Function function,Map<Address,Table> tables,AddressSet extra,AddressSet calledCode) {}
@@ -26,6 +28,11 @@ public final class HalfwordSwitchRecovery {
     }
 
     private static Table match(Program p,Address branch,Function owner) throws Exception {
+        Table halfword=matchHalfword(p,branch,owner);
+        return halfword!=null?halfword:matchPaddedByte(p,branch,owner);
+    }
+
+    private static Table matchHalfword(Program p,Address branch,Function owner) throws Exception {
         var memory=p.getMemory();var text=memory.getBlock(branch);
         if(text==null||!text.contains(branch.subtract(4)))return null;
         int length=memory.getInt(branch.subtract(4))==0x60000000?12:11;
@@ -79,30 +86,92 @@ public final class HalfwordSwitchRecovery {
             if(!at.equals(guard))for(var ref:p.getReferenceManager().getReferencesTo(at))
                 if(ref.getReferenceType().isFlow()&&!ref.getFromAddress().equals(at.subtract(4)))return null;
         }
-        return new Table(branch,guard,table,base,fallback,count,targets);
+        return new Table(branch,guard,table,base,fallback,count,targets,2,1);
+    }
+
+    /** Two exact compiler schedules: scaled byte + one terminal NOP, or
+     * unscaled byte + two terminal NOPs. No general register propagation. */
+    private static Table matchPaddedByte(Program p,Address branch,Function owner) throws Exception {
+        var memory=p.getMemory();var text=memory.getBlock(branch);Address guard=branch.subtract(44);
+        if(text==null||!text.isExecute()||!text.isInitialized()||!text.contains(guard)||!text.contains(branch.add(3)))return null;
+        Instruction dispatch=p.getListing().getInstructionAt(branch);
+        if(dispatch==null)try{dispatch=new PseudoDisassembler(p).disassemble(branch);}catch(Exception ex){return null;}
+        if(dispatch==null||!dispatch.getFlowType().isJump()||!dispatch.getFlowType().isComputed()||dispatch.getFlowOverride()!=FlowOverride.NONE)return null;
+        int[] w=new int[12];for(int n=0;n<12;n++)w[n]=memory.getInt(guard.add(n*4L));
+        if((w[1]&0xffff0003)!=0x41990000||(w[2]&0xffff0000)!=0x3d800000||
+            (w[3]&0xffff0000)!=0x398c0000||(w[4]&0xffff07ff)!=0x7c0c00ae||w[11]!=0x4e800420)return null;
+        int index=(w[4]>>>11)&31;
+        // r12 is overwritten by table-address construction before the load.
+        if(index==12||(w[0]&0xffff0000)!=(0x2b000000|(index<<16)))return null;
+        int high,low,scale;
+        if(w[5]==0x5400103a&&w[8]==0x7d8c0214&&w[9]==0x7d8903a6&&w[10]==0x60000000){high=6;low=7;scale=4;}
+        else if(w[7]==0x7d8c0214&&w[8]==0x7d8903a6&&w[9]==0x60000000&&w[10]==0x60000000){high=5;low=6;scale=1;}
+        else return null;
+        if((w[high]&0xffff0000)!=0x3d800000||(w[low]&0xffff0000)!=0x398c0000)return null;
+        int count=(w[0]&65535)+1;if(count<2||count>256)return null;
+        Address table=branch.getAddressSpace().getAddress(pair(w[2],w[3]));var data=memory.getBlock(table);
+        if(data==null||!data.isInitialized()||data.isWrite()||data.isExecute()||!data.contains(table.add(count-1)))return null;
+        // Reading a compatible scalar byte does not replace a definition. Larger
+        // data types, structures, instructions and manual/imported names are held.
+        for(int n=0;n<count;n++) {
+            Address at=table.add(n);var defined=p.getListing().getDefinedDataContaining(at);
+            if(p.getListing().getInstructionContaining(at)!=null||
+                (defined!=null&&(!(defined.getDataType() instanceof ByteDataType)||defined.getLength()!=1))||protectedSymbol(p,at))return null;
+        }
+        Address base=branch.getAddressSpace().getAddress(pair(w[high],w[low]));
+        Address fallback=guard.add(4L+(short)(w[1]&0xfffc));
+        if(!text.contains(base)||!text.contains(fallback)||!text.contains(fallback.add(3))||
+            (fallback.compareTo(guard)>0&&fallback.compareTo(branch)<=0))return null;
+        var targets=new TreeSet<Address>();
+        for(int n=0;n<count;n++) {
+            long value=base.getOffset()+(memory.getByte(table.add(n))&255)*(long)scale;
+            if(value>0xffffffffL)return null;Address target=branch.getAddressSpace().getAddress(value);
+            if((value&3)!=0||!text.contains(target)||!text.contains(target.add(3))||protectedSymbol(p,target))return null;
+            targets.add(target);
+        }
+        if(targets.size()<2)return null;
+        for(var ref:p.getReferenceManager().getReferencesFrom(branch))
+            if(ref.getReferenceType().isFlow()&&(!ref.getReferenceType().isJump()||!targets.contains(ref.getToAddress())))return null;
+        for(Address at=guard;at.compareTo(branch)<=0;at=at.add(4)) {
+            var f=p.getFunctionManager().getFunctionContaining(at);var ins=p.getListing().getInstructionContaining(at);
+            if((f!=null&&!f.equals(owner))||p.getListing().getDefinedDataContaining(at)!=null||
+                (ins!=null&&(!ins.getAddress().equals(at)||ins.getFlowOverride()!=FlowOverride.NONE))||protectedSymbol(p,at))return null;
+            if(!at.equals(guard))for(var ref:p.getReferenceManager().getReferencesTo(at))
+                if(ref.getReferenceType().isFlow()&&!ref.getFromAddress().equals(at.subtract(4)))return null;
+        }
+        return new Table(branch,guard,table,base,fallback,count,targets,1,scale);
+    }
+
+    private static boolean protectedSymbol(Program p,Address at) {
+        return Arrays.stream(p.getSymbolTable().getSymbols(at)).anyMatch(s->s.getSource()==SourceType.USER_DEFINED||s.getSource()==SourceType.IMPORTED);
     }
 
     private static Plan preflight(Program p,Function f,Table root,TaskMonitor monitor) throws Exception {
         var old=f.getBody();var extra=new AddressSet();var tables=new TreeMap<Address,Table>();tables.put(root.branch(),root);
         var edges=new ArrayList<Edge>();var calls=new TreeSet<Address>();var queue=new ArrayDeque<Address>(root.targets());queue.add(root.fallback());
         var decoder=new PseudoDisassembler(p);var text=p.getMemory().getBlock(root.branch());
-        Address end=root.branch().add(MAX_EXTRA_BYTES+3L);
+        // Retain the byte family's 4 KiB budget; halfword limits are unchanged.
+        int maxExtra=root.width()==1?4096:MAX_EXTRA_BYTES;
+        Address end=root.branch().add(maxExtra+3L);
         while(!queue.isEmpty()) {
             monitor.checkCancelled();Address at=queue.removeFirst();
             if(old.contains(at)){if(p.getListing().getInstructionAt(at)==null)return null;continue;}
             if(extra.contains(at))continue;
-            if(extra.getNumAddresses()>=MAX_EXTRA_BYTES || at.compareTo(f.getEntryPoint())<0 ||
+            if(extra.getNumAddresses()>=maxExtra || at.compareTo(f.getEntryPoint())<0 ||
                 at.compareTo(end)>0 || !text.contains(at) || !text.contains(at.add(3)) || (at.getOffset()&3)!=0)return null;
             if(p.getFunctionManager().getFunctionContaining(at)!=null || p.getListing().getDefinedDataContaining(at)!=null ||
                 p.getListing().getDefinedData(new AddressSet(at,at.add(3)),true).hasNext())return null;
             if(Arrays.stream(p.getSymbolTable().getSymbols(at)).anyMatch(s->s.getSource()==SourceType.USER_DEFINED||s.getSource()==SourceType.IMPORTED))return null;
             Instruction instruction=p.getListing().getInstructionContaining(at);
             if(instruction!=null&&!instruction.getAddress().equals(at))return null;
+            if(root.width()==1&&instruction!=null&&instruction.getFlowOverride()!=FlowOverride.NONE)return null;
             if(instruction==null)try{instruction=decoder.disassemble(at);}catch(Exception ex){return null;}
             if(instruction==null||instruction.getLength()!=4)return null;
             extra.add(at,at.add(3));var flow=instruction.getFlowType();
             if(flow.isJump()&&flow.isComputed()) {
-                Table nested=match(p,at,f);if(nested==null || tables.size()>=MAX_TABLES)return null;
+                // Preserve the halfword family's prior acceptance boundary.
+                Table nested=root.width()==1?match(p,at,f):matchHalfword(p,at,f);
+                if(nested==null || tables.size()>=MAX_TABLES)return null;
                 tables.put(at,nested);queue.add(nested.fallback());
                 for(Address to:nested.targets()){edges.add(new Edge(at,to));queue.add(to);}
             }else if(flow.isJump())for(Address to:instruction.getFlows()) {
@@ -124,7 +193,7 @@ public final class HalfwordSwitchRecovery {
             for(Edge edge:edges)if(edge.to().compareTo(t.guard())>0&&edge.to().compareTo(t.branch())<=0&&
                 !edge.from().equals(edge.to().subtract(4)))return null;
         }
-        AddressSet calledCode=preflightCalls(p,body,calls,monitor);
+        AddressSet calledCode=root.width()==1?new AddressSet():preflightCalls(p,body,calls,monitor);
         if(calledCode==null)return null;
         return new Plan(f,tables,extra,calledCode);
     }
@@ -172,13 +241,17 @@ public final class HalfwordSwitchRecovery {
         var f=p.getFunctionManager().getFunctionContaining(branch);
         if(f==null||f.getSymbol().getSource()!=SourceType.DEFAULT)return null;
         Table table=match(p,branch,f);if(table==null||!f.getBody().contains(table.guard(),branch))return null;
+        if(table.width()==1)for(Address at=table.guard();at.compareTo(branch)<=0;at=at.add(4))
+            if(p.getListing().getInstructionAt(at)==null)return null;
         Plan plan=preflight(p,f,table,monitor);
         var evidence=new LinkedHashMap<String,Object>();evidence.put("binary_sha256",XenonEvidence.sourceHash(p));
         evidence.put("branch",branch.toString());evidence.put("function_address",f.getEntryPoint().toString());
         evidence.put("table_address",table.data().toString());evidence.put("entry_count",table.count());
         evidence.put("relative_base",table.base().toString());
-        evidence.put("entry_width",2);evidence.put("offset_scale",1);evidence.put("targets",table.targets().stream().map(Object::toString).toList());
-        evidence.put("identification_source","physical unsigned cmplwi/bgt, r0 index*2, read-only lhzx halfwords, explicit constant base, exact CTR dataflow");
+        evidence.put("entry_width",table.width());evidence.put("offset_scale",table.scale());evidence.put("targets",table.targets().stream().map(Object::toString).toList());
+        evidence.put("identification_source",table.width()==1?
+            "physical unsigned cmplwi/bgt, read-only lbzx bytes, explicit constant base, exact CTR dataflow, terminal NOP schedule":
+            "physical unsigned cmplwi/bgt, r0 index*2, read-only lhzx halfwords, explicit constant base, exact CTR dataflow");
         evidence.put("status",plan==null?"withheld_ownership_or_data":"validated_present");
         if(plan==null)return new Result(1,0,0,evidence);
         int refs=0;var body=new AddressSet(f.getBody());body.add(plan.extra());

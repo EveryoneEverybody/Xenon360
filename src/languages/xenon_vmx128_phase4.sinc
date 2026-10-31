@@ -33,6 +33,30 @@ define pcodeop xenon_lvrx_partial;
     xvD = vectorShiftLeftByOctet(xvA,xvB);
 }
 
+# Signed halfword subtype: encoded VA=0x60, not a source register.
+# Exact mask 0xfc1f07f0; see docs/VMX128_UNPACK.md.
+:vupklsh128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_6_9=15 & XENON_BIT_4=0 & A=0 & XENON_BIT_5=1 & BIT_10=1
+{
+    # ADD-zero snapshot preserves high lanes in the 12.1.4 optimizer.
+    zero:16 = zext(0:4);
+    source:16 = xvB + zero;
+    half0:2 = source(6);
+    word0:4 = sext(half0);
+    half1:2 = source(4);
+    word1:4 = sext(half1);
+    half2:2 = source(2);
+    word2:4 = sext(half2);
+    half3:2 = source(0);
+    word3:4 = sext(half3);
+    local result:16;
+    result[96,32] = word0;
+    result[64,32] = word1;
+    result[32,32] = word2;
+    result[0,32] = word3;
+    xvD = result;
+}
+
 :vupklsb128 xvD,xvB
     is OP=6 & xvD & xvB & XENON_BITS_6_9=15 & XENON_BIT_4=0
 {

@@ -7,7 +7,7 @@ plugins {
     id 'java-library'
 }
 
-version = '0.8.2'
+version = '0.8.3'
 def installation = providers.gradleProperty('GHIDRA_INSTALL_DIR')
     .orElse(providers.environmentVariable('GHIDRA_INSTALL_DIR')).orNull
 if (!installation) {
@@ -23,7 +23,7 @@ propertiesFile.withInputStream { application.load(it) }
 ext.ghidraVersion = application.getProperty('application.version')
 def javaRelease = ['12.1.4': 21, '12.2': 25][ghidraVersion]
 if (javaRelease == null) {
-    throw new GradleException("Xenon360 0.8.2 supports Ghidra 12.1.4 and 12.2. Found ${ghidraVersion}.")
+    throw new GradleException("Xenon360 0.8.3 supports Ghidra 12.1.4 and 12.2. Found ${ghidraVersion}.")
 }
 if (JavaVersion.current().majorVersion.toInteger() != javaRelease) {
     throw new GradleException("Build Ghidra ${ghidraVersion} with JDK ${javaRelease}. Set JAVA_HOME to that JDK directory.")
@@ -118,7 +118,7 @@ tasks.register('writeBuildInfo') {
 def allowedEntry = { String entry ->
     entry in ['extension.properties', 'Module.manifest', 'README.md', 'CHANGELOG.md',
               'THIRD_PARTY_NOTICES.md', 'LICENSE', 'NOTICE', 'XENON360_BUILD.json',
-              'lib/XenonVMX128.jar'] ||
+              'lib/XenonVMX128.jar', 'assets/Xenon360_banner.png'] ||
         entry ==~ /licenses\/[^\/]+\.txt/ ||
         entry ==~ /data\/languages\/[^\/]+\.(sinc|slaspec|sla|ldefs|pspec|cspec)/
 }
@@ -151,13 +151,23 @@ tasks.named('buildExtension', Zip) {
             def names = zip.entries().collect { it.name }.findAll { !it.endsWith('/') }
             ['extension.properties', 'Module.manifest', 'LICENSE', 'XENON360_BUILD.json',
              'lib/XenonVMX128.jar', 'data/languages/xenon_64_isa_altivec_be.sla',
-             'data/languages/xenon_64_isa_altivec_be.slaspec', 'licenses/LICENSE-GHIDRA.txt'].each {
+             'data/languages/xenon_64_isa_altivec_be.slaspec', 'licenses/LICENSE-GHIDRA.txt',
+             'assets/Xenon360_banner.png'].each {
                 if (!names.contains("${extensionName}/${it}".toString())) {
                     throw new GradleException("Extension archive is missing ${it}")
                 }
             }
             if (names.any { !allowedEntry(it.substring(extensionName.length() + 1)) }) {
                 throw new GradleException('Unexpected file in the extension archive.')
+            }
+            def banner = zip.getInputStream(zip.getEntry("${extensionName}/assets/Xenon360_banner.png")).bytes
+            if (MessageDigest.getInstance('SHA-256').digest(banner).encodeHex().toString() !=
+                    'c6cb64c8fb55c4741aa8c58fb3746d80b5b52a58741e9b0be9f53cc08aa94f09') {
+                throw new GradleException('Required original Xenon360 banner changed.')
+            }
+            def readme = zip.getInputStream(zip.getEntry("${extensionName}/README.md")).getText('UTF-8').replace('\r\n', '\n')
+            if (!readme.contains('<p align="center">\n  <img src="assets/Xenon360_banner.png" alt="Xenon360" width="100%">\n</p>')) {
+                throw new GradleException('Required Xenon360 banner markup is missing.')
             }
         }
         new File(archive.parentFile, archive.name + '.sha256').setText(digest(archive) + '  ' + archive.name + '\n', 'UTF-8')
@@ -206,16 +216,34 @@ tasks.register('smokeTest', JavaExec) {
                 '-postScript', 'XenonExtensionSmokeTest.java', passFile.get().asFile.absolutePath,
                 '-postScript', 'XenonOptionCompatibilityTest.java', smokeRoot.get().file('option-compatibility.json').asFile.absolutePath,
                 '-postScript', 'XenonVmxSemanticTest.java', smokeRoot.get().file('vmx-semantics.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxSplatTest.java', smokeRoot.get().file('vmx-splats.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxSplatDecompilerTest.java', smokeRoot.get().file('vmx-splat-decompiler.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxMergeTest.java', smokeRoot.get().file('vmx-merges.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxMergeDecompilerTest.java', smokeRoot.get().file('vmx-merge-decompiler.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxPermuteTest.java', smokeRoot.get().file('vmx-permute.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxPermuteDecompilerTest.java', smokeRoot.get().file('vmx-permute-decompiler.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxPermuteOptimizationTest.java', smokeRoot.get().file('vmx-permute-optimization.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxPermuteStructuredTest.java', smokeRoot.get().file('vmx-permute-structured.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxElementWordTest.java', smokeRoot.get().file('vmx-element-word.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxElementWordDecompilerTest.java', smokeRoot.get().file('vmx-element-word-decompiler.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxUnpackTest.java', smokeRoot.get().file('vmx-unpack.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxUnpackDecompilerTest.java', smokeRoot.get().file('vmx-unpack-decompiler.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxCompareTest.java', smokeRoot.get().file('vmx-compare.json').asFile.absolutePath,
+                '-postScript', 'XenonVmxCompareDecompilerTest.java', smokeRoot.get().file('vmx-compare-decompiler.json').asFile.absolutePath,
+                '-postScript', 'XenonFpCompareTest.java', smokeRoot.get().file('fp-compare.json').asFile.absolutePath,
+                '-postScript', 'XenonFpCompareDecompilerTest.java', smokeRoot.get().file('fp-compare-decompiler.json').asFile.absolutePath,
                 '-postScript', 'XenonAnalysisSafetyTest.java', smokeRoot.get().file('analysis-safety.json').asFile.absolutePath,
                 '-postScript', 'XenonSwitchTest.java', smokeRoot.get().file('switch-safety.json').asFile.absolutePath,
                 '-postScript', 'XenonHalfwordSwitchTest.java', smokeRoot.get().file('halfword-safety.json').asFile.absolutePath,
+                '-postScript', 'XenonPaddedByteSwitchTest.java', smokeRoot.get().file('padded-byte-safety.json').asFile.absolutePath,
+                '-postScript', 'XenonAbsoluteWordSwitchTest.java', smokeRoot.get().file('absolute-word-safety.json').asFile.absolutePath,
                 '-deleteProject', '-log', smokeRoot.get().file('headless.log').asFile.absolutePath]
     }
     doLast {
         if (!passFile.get().asFile.isFile() || passFile.get().asFile.getText('UTF-8').trim() != 'PASS') {
             throw new GradleException('Ghidra smoke test failed. See build/smoke/headless.log.')
         }
-        ['option-compatibility', 'vmx-semantics', 'analysis-safety', 'switch-safety', 'halfword-safety'].each { name ->
+        ['option-compatibility', 'vmx-semantics', 'vmx-splats', 'vmx-splat-decompiler', 'vmx-merges', 'vmx-merge-decompiler', 'vmx-permute', 'vmx-permute-decompiler', 'vmx-permute-optimization', 'vmx-permute-structured', 'vmx-element-word', 'vmx-element-word-decompiler', 'vmx-unpack', 'vmx-unpack-decompiler', 'vmx-compare', 'vmx-compare-decompiler', 'fp-compare', 'fp-compare-decompiler', 'analysis-safety', 'switch-safety', 'halfword-safety', 'padded-byte-safety', 'absolute-word-safety'].each { name ->
             def receipt = smokeRoot.get().file(name + '.json').asFile
             if (!receipt.isFile()) {
                 throw new GradleException("Missing ${name} receipt. See build/smoke/headless.log.")

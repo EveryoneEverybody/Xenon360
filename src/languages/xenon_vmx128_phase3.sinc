@@ -71,6 +71,30 @@ define pcodeop xenon_stvrx_partial;
 }
 
 # VX128 arithmetic/logical forms.
+# Signed halfword subtype: encoded VA=0x60, not a source register.
+# Exact mask 0xfc1f07f0; see docs/VMX128_UNPACK.md.
+:vupkhsh128 xvD,xvB
+    is OP=6 & xvD & xvB & XENON_BITS_6_9=14 & XENON_BIT_4=0 & A=0 & XENON_BIT_5=1 & BIT_10=1
+{
+    # ADD-zero snapshot preserves high lanes in the 12.1.4 optimizer.
+    zero:16 = zext(0:4);
+    source:16 = xvB + zero;
+    half0:2 = source(14);
+    word0:4 = sext(half0);
+    half1:2 = source(12);
+    word1:4 = sext(half1);
+    half2:2 = source(10);
+    word2:4 = sext(half2);
+    half3:2 = source(8);
+    word3:4 = sext(half3);
+    local result:16;
+    result[96,32] = word0;
+    result[64,32] = word1;
+    result[32,32] = word2;
+    result[0,32] = word3;
+    xvD = result;
+}
+
 :vupkhsb128 xvD,xvB
     is OP=6 & xvD & xvB & XENON_BITS_6_9=14 & XENON_BIT_4=0
 {
@@ -92,7 +116,20 @@ define pcodeop xenon_stvrx_partial;
 :vmrglw128 xvD,xvA,xvB
     is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=13 & XENON_BIT_4=0
 {
-    xvD = vectorMergeLowWord(xvA,xvB);
+    # Guest words 2 and 3 from the same qualified snapshot form as the high merge.
+    zero:16 = zext(0:4);
+    a:16 = xvA + zero;
+    b:16 = xvB + zero;
+    a2:4 = a[32,32];
+    a3:4 = a[0,32];
+    b2:4 = b[32,32];
+    b3:4 = b[0,32];
+    local result:16;
+    result[96,32] = a2;
+    result[64,32] = b2;
+    result[32,32] = a3;
+    result[0,32] = b3;
+    xvD = result;
 }
 
 :vslw128 xvD,xvA,xvB
@@ -153,17 +190,49 @@ define pcodeop xenon_stvrx_partial;
     xenon_vmx128_record(xvD);
 }
 
+# Exact integer-word equality and its CR6 reduction. Keep all inherited userop
+# declarations in place: their numbering is a compatibility interface.
+# Guest word zero occupies the most-significant 32 bits of the vector.
+macro xenonCompareEqualWord(result, inputA, inputB) {
+    # The ADD-zero snapshot also supports the qualified 12.1.4 optimizer.
+    zero:16 = zext(0:4);
+    a:16 = inputA + zero;
+    b:16 = inputB + zero;
+    a0:4 = a(12); b0:4 = b(12);
+    a1:4 = a(8);  b1:4 = b(8);
+    a2:4 = a(4);  b2:4 = b(4);
+    a3:4 = a(0);  b3:4 = b(0);
+    w0:4 = 0 - zext(a0 == b0);
+    w1:4 = 0 - zext(a1 == b1);
+    w2:4 = 0 - zext(a2 == b2);
+    w3:4 = 0 - zext(a3 == b3);
+    local assembled:16;
+    assembled[96,32] = w0;
+    assembled[64,32] = w1;
+    assembled[32,32] = w2;
+    assembled[0,32] = w3;
+    result = assembled;
+}
+
 :vcmpequw128 xvD,xvA,xvB
     is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=8 & XENON_BIT_4=0
 {
-    xvD = vectorCompareEqualToUnsignedWord(xvA,xvB);
+    local result:16;
+    xenonCompareEqualWord(result,xvA,xvB);
+    xvD = result;
 }
 
 :vcmpequw128. xvD,xvA,xvB
     is OP=6 & xvD & xvA & xvB & XENON_BITS_6_9=9 & XENON_BIT_4=0
 {
-    xvD = vectorCompareEqualToUnsignedWord(xvA,xvB);
-    xenon_vmx128_record(xvD);
+    local result:16;
+    xenonCompareEqualWord(result,xvA,xvB);
+    allOnes:16 = ~zext(0:4);
+    all:1 = result == allOnes;
+    none:1 = result == 0;
+    # CR[24:27] = all || 0 || none || 0. Preserve model padding bits.
+    cr6 = (cr6 & 0xf0) | (all << 3) | (none << 1);
+    xvD = result;
 }
 
 # VX128_4 D3D pack. IMM is the five-bit x/y control field and z occupies
@@ -175,14 +244,17 @@ define pcodeop xenon_stvrx_partial;
     xvD = xenon_vpkd3d128(xvD,xvB,A_BITS:1,XENON_BITS_6_7:1);
 }
 
-# VX128_1 store-vector-element-word. The effective-address and memory-write
-# shape is the same as Ghidra's existing AltiVec stvewx model; only the source
-# register namespace is extended to v0..v127.
+# VX128_1 store-vector-element-word. Guest word zero is the most-significant
+# 32 bits of xvR. Address bits 2..3 select the guest word; low bits 0..1 are
+# ignored for both selection and the four-byte store. The language's ram
+# truncate_space retains the existing 32-bit effective-address behavior.
 :stvewx128 xvR,RA_OR_ZERO,RB
     is OP=4 & xvR & RA_OR_ZERO & RB & BITS_6_10=6 & BITS_4_5=0
 {
     EA:$(REGISTER_SIZE) = (RA_OR_ZERO + RB) & 0xfffffffffffffffc;
-    *[ram]:4 EA = storeVectorElementWordIndexed(xvR,RA_OR_ZERO,RB);
+    word_shift:1 = (12 - (EA:1 & 12)) * 8;
+    selected:16 = xvR >> word_shift;
+    *[ram]:4 EA = selected:4;
 }
 
 # Cell/VMX store-vector-right indexed. This is a standard AltiVec/Cell form,

@@ -44,19 +44,21 @@ def inspect(files,deny=None):
     return dict(schema='xenon360/public-safety-v1',result='FAIL' if findings else 'PASS',files_and_members=len(inventory),expanded_bytes=total,findings=findings,inventory=inventory)
 
 def check_extension(path,target):
-    if path.name!=f'ghidra_{target}_XenonVMX128_0.8.2.zip' or not 100_000<path.stat().st_size<20_000_000:raise ValueError('Unexpected extension filename or size')
+    if path.name!=f'ghidra_{target}_XenonVMX128_0.8.3.zip' or not 100_000<path.stat().st_size<20_000_000:raise ValueError('Unexpected extension filename or size')
     with zipfile.ZipFile(path) as z:
         prefix='XenonVMX128/';names=set(z.namelist())
-        required=['extension.properties','Module.manifest','README.md','CHANGELOG.md','LICENSE','NOTICE','THIRD_PARTY_NOTICES.md','licenses/LICENSE-GHIDRA.txt','XENON360_BUILD.json','lib/XenonVMX128.jar','data/languages/xenon.ldefs','data/languages/xenon_64_isa_altivec_be.sla','data/languages/xenon_64_isa_altivec_be.slaspec']
+        required=['extension.properties','Module.manifest','README.md','CHANGELOG.md','LICENSE','NOTICE','THIRD_PARTY_NOTICES.md','licenses/LICENSE-GHIDRA.txt','XENON360_BUILD.json','lib/XenonVMX128.jar','data/languages/xenon.ldefs','data/languages/xenon_64_isa_altivec_be.sla','data/languages/xenon_64_isa_altivec_be.slaspec','assets/Xenon360_banner.png']
         if not all(prefix+n in names for n in required) or any(not n.startswith(prefix) for n in names):raise ValueError('Incomplete extension layout')
         for name in names:
             rel=name[len(prefix):]
-            if rel in ('','data/','data/languages/','licenses/','lib/'):continue
+            if rel in ('','data/','data/languages/','licenses/','lib/','assets/'):continue
             if rel not in required and not re.fullmatch(r'(?:licenses/[^/]+\.txt|data/languages/[^/]+\.(?:sinc|slaspec|sla|ldefs|pspec|cspec))',rel):raise ValueError('Unexpected extension content')
         if z.comment or any(e.comment for e in z.infolist()):raise ValueError('Unexpected archive comments')
+        if hashlib.sha256(z.read(prefix+'assets/Xenon360_banner.png')).hexdigest()!='c6cb64c8fb55c4741aa8c58fb3746d80b5b52a58741e9b0be9f53cc08aa94f09':raise ValueError('Original banner changed')
+        if '<p align="center">\n  <img src="assets/Xenon360_banner.png" alt="Xenon360" width="100%">\n</p>' not in z.read(prefix+'README.md').decode().replace('\r\n','\n'):raise ValueError('Original banner markup missing')
         info=json.loads(z.read(prefix+'XENON360_BUILD.json'));props=z.read(prefix+'extension.properties').decode()
         release={'12.1.4':21,'12.2':25}[target]
-        if info['ghidra_version']!=target or info['loader_version']!='0.8.2' or info['java_release']!=release:raise ValueError('Build metadata mismatch')
+        if info['ghidra_version']!=target or info['loader_version']!='0.8.3' or info['java_release']!=release:raise ValueError('Build metadata mismatch')
         if f'version={target}' not in props.splitlines():raise ValueError('Extension version mismatch')
         jar=z.read(prefix+'lib/XenonVMX128.jar');sla=z.read(prefix+'data/languages/xenon_64_isa_altivec_be.sla')
         if hashlib.sha256(jar).hexdigest()!=info['loader_jar_sha256'] or hashlib.sha256(sla).hexdigest()!=info['sla_sha256']:raise ValueError('Implementation hash mismatch')

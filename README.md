@@ -4,134 +4,71 @@
 
 # Xenon360
 
-Xenon360 0.8.2 adds Xbox 360 executable support to **Ghidra 12.1.4 and 12.2**: an XEX/XEXP loader, a Xenon PowerPC/VMX128 language, import naming, native PDB/XDB symbols, automatic compiler-helper modeling, bounded switch recovery, and validated Havok metadata identification.
+Xenon360 0.8.3 is a Ghidra extension for loading and analyzing Xbox 360 executables. It includes an XEX/XEXP loader, a Xenon PowerPC/VMX128 processor language, and automatic analysis tools.
 
-Xenon360 is an independent open-source project. It is not affiliated with, sponsored by, or endorsed by Microsoft, Havok, or Valve Corporation. References to these technologies are for compatibility, identification, and technical research only.
+For updates, improvements, and known limitations, see the [GitHub Releases page](https://github.com/EveryoneEverybody/Xenon360/releases).
 
-Xbox, Xbox 360, Direct3D, and DirectX are trademarks of the Microsoft group of companies. Havok and Havok Physics are trademarks of Havok. Valve and Source are trademarks of Valve Corporation. All other trademarks are the property of their respective owners.
+## Compatibility
 
-## Install
-
-Use the extension ZIP built for your Ghidra version. In Ghidra's project window, open **File > Install Extensions**, click **+**, and select the ZIP. Restart Ghidra, import your executable using **Xenon360 XEX**, and run Auto Analysis.
-
-No build tools, PowerShell, or follow-up repair scripts are required to use the extension. The ZIP contains Java classes and language data, not host-specific executables.
-
-Keep a backup of existing projects and their original extension package. Validate 0.8.2 using a fresh import or a project copy; opening an old project in a newer Ghidra can migrate it. Never use a project upgraded by 12.2 to test 12.1.4. The Xenon language revision remains 1.1; retain a project backup before accepting Ghidra's language upgrade.
+**Ghidra 12.2 is the primary target.** Ghidra 12.1.4 is supported on a best-effort basis. Install the package built for your exact Ghidra version; the packages are not interchangeable.
 
 | Ghidra | Required JDK | Extension ZIP |
 |---|---|---|
-| 12.1.4 | 21 | `ghidra_12.1.4_XenonVMX128_0.8.2.zip` |
-| 12.2 | 25 | `ghidra_12.2_XenonVMX128_0.8.2.zip` |
+| 12.2 | 25 | `ghidra_12.2_XenonVMX128_0.8.3.zip` |
+| 12.1.4 | 21 | `ghidra_12.1.4_XenonVMX128_0.8.3.zip` |
 
-The two packages are built independently against their respective Ghidra release. They are not interchangeable. Verify the download against its accompanying SHA-256 file.
+The Xenon language version is **1.4**, with language ID `PowerPC:BE:64:Xenon-VMX128-32addr`. The extension module remains named `XenonVMX128` for compatibility with existing projects.
 
-If Ghidra asks to configure new extension plugins, enable **XenonAnalysisPlugin**. It can also be enabled in **File > Configure > Configure All Plugins**, under Analysis. Its actions appear in the CodeBrowser's **Tools > Xenon360** menu.
+Back up existing projects and their original extension package before upgrading. Try 0.8.3 with a fresh import or a project copy, and keep a backup before accepting a language upgrade. Never open a project upgraded by Ghidra 12.2 in 12.1.4.
 
-## Integrated analysis and evidence
+The packages contain no host-specific executables. Windows and Linux have been tested; macOS has not been qualified. On macOS, first ensure Ghidra works with the native components required for your Mac.
 
-Normal Auto Analysis enables **Xenon360 Compiler Helpers** and **Xenon360 Havok Metadata**. Both are cancellable and re-runnable. Partial memory selections are deferred: rerun against the full program. The analysis log records recognized structures, withheld ownership conflicts, and remaining helper flow overrides.
+## Installation
 
-**Xenon360 Bounded Switch Tables** also runs automatically. It recognizes validated read-only byte-offset and unsigned-halfword relative-offset switch-table patterns with unsigned range guards and strict target validation. It restores missing case edges and only extends default-named function bodies into validated unowned code. User symbols, defined data, conflicting owners and unknown patterns are preserved. Exports include the table address, guard-derived count, scale and exact targets.
+1. Download the matching extension ZIP and verify it against the accompanying SHA-256 checksum.
+2. In Ghidra's project window, choose **File > Install Extensions**, click **+**, and select the ZIP.
+3. Restart Ghidra. If prompted to configure plugins, enable **XenonAnalysisPlugin**.
 
-The helper analyzer preserves established functions and symbols. **Repair CALL_RETURN at exact save helpers** is an advanced option, disabled by default because Ghidra does not retain flow-override authorship. Enable it only when those overrides are known analysis artifacts. It only repairs direct linked branches whose bytes and exact helper destination agree.
+No build tools or follow-up repair scripts are needed. The plugin can also be enabled through **File > Configure > Configure All Plugins**, under Analysis.
 
-Havok recognition checks retained names, scoped names, executable callbacks, mapped vtables, and supported metadata layouts. Legacy Xenon records additionally require a corroborating constructor vptr store. Safe metadata labels and descriptor types are automatic. **Create unowned validated callback functions** recovers a missing function only after a complete control-flow check within 256 bytes, preserving existing ownership, code, data, and names. **Name validated callback functions** is disabled by default. It names only default-named entries with a unique class/role identification and a recorded binary hash. Shared callbacks and established names are withheld. PC instance layouts and prototypes are never copied to Xbox 360.
+## Basic usage
 
-- **Export Analysis Evidence...** chooses a JSON output file. It records the binary hash, one recommended name per function, source, SDK version evidence or `UNKNOWN`, confidence, application status, imports, and native BSim features when available.
-- **Compare Reference Evidence...** compares user-selected local evidence exports and writes a review-only report. It never automatically applies candidate names, types, or prototypes. No particular title, program binary, or proprietary SDK is required.
+1. Create a local Ghidra project and choose **File > Import File**.
+2. Select an executable you are authorized to analyze. Confirm **Xenon360 XEX** and the Xenon language above.
+3. For an XEXP patch, select its matching executable with **Base XEX**. Optional native symbols can be selected with **PDB/XDB**; leave this empty if you have no matching symbols.
+4. Open the program and accept normal **Auto Analysis**. Keep native switch analysis enabled and review the analysis log for warnings.
 
-No BSim server, external API, Havok SDK installation, or network service is required. Scans are bounded to 512 MiB of initialized bytes, 256 MiB per block, and 256 callback signatures per export (five seconds per function). Unsupported metadata, missing boundaries, and partial native signatures are explicitly reported. The x64 recognizer currently handles a narrow, independently checked static-initializer form.
+## Features
 
-This is identification of retained metadata and loaded-object callbacks. World/solver/collision function families, arbitrary virtual tables, and missing reflection data are not guessed. A Havok version string identifies retained metadata, not necessarily the exact linked SDK build.
+- XEX executable loading and XEXP patch reconstruction.
+- Xenon PowerPC and VMX128 disassembly and decompilation support.
+- Import naming and native PDB/XDB symbol loading, with symbol-identity checks.
+- Automatic compiler-helper analysis, recovery of supported switch tables, and recognition of supported Havok metadata.
+- Local analysis export and reference comparison through **Tools > Xenon360**. Comparison reports do not automatically apply names, types, or prototypes.
 
-For XEXP patches, select the matching source executable with the **Base XEX** picker. For native symbols, use the **PDB/XDB** picker. The default `public-symbols` mode loads types and public symbols; `all` enables Ghidra's full Universal PDB analysis.
+Coverage is incomplete, and unsupported cases may leave decompilation unfinished. Instruction support does not guarantee hardware-equivalent results. Advanced repair and callback-renaming options are disabled by default and can change saved analysis; use them only when you understand their effect on the project.
 
-## Supported formats
+Xenon360 does not execute game code or modify source executables. It makes no network requests and contains no telemetry. Users supply their own executables and symbols; no proprietary SDK or game content is included or required for installation. Analysis exports can contain program names, hashes, symbols, and addresses; review them before sharing.
 
-XEX0, XEX?, XEX%, XEX-, XEX1, XEX2, and XEXP/DELTA are supported, including NONE, BASIC, and NORMAL/LZX reconstruction and the supported retail/development encryption variants.
+## Troubleshooting and removal
 
-The language ID is `PowerPC:BE:64:Xenon-VMX128-32addr`. The module remains named `XenonVMX128` to preserve existing project bindings.
+- **Version mismatch:** use the ZIP for your exact Ghidra version and the JDK listed above.
+- **Loader or language missing:** restart Ghidra and check for duplicate XenonVMX128 installations. A separate XEX loader is unnecessary.
+- **Symbols rejected:** verify that the PDB/XDB matches the executable. Ordinary executable loading does not require symbols.
+- **Incomplete analysis:** review warnings and unsupported instructions. An adequate decompiler timeout can help, but it does not guarantee complete recovery.
 
-Unknown imports retain deterministic module-and-ordinal names. Conflicting legacy ordinal observations are not assigned a guessed name. Native symbol loading checks GUID, age, processor identity, and file integrity before application.
+To uninstall, close open programs, mark XenonVMX128 for removal in **File > Install Extensions**, and restart Ghidra. Removal does not undo changes saved in a project. Retain backups and the matching package for projects that require the Xenon language.
 
-## Ghidra on macOS
+## Documentation and source
 
-Use a working Ghidra installation with its native components built for your Mac. Follow Ghidra's **Getting Started > Building Native Components** instructions when needed. The Xenon360 ZIP itself is unchanged across platforms. Qualification covers Windows builds and synthetic tests, with Linux qualification performed by the release workflow. macOS has not been qualified. A workflow configuration alone does not establish a passing run.
+Release assets include the public source and license notices. Building requires the matching Ghidra/JDK pair above and Gradle 9.1.0; the included wrapper downloads Gradle on first use.
 
-## Build from source
+Set `JAVA_HOME` and `GHIDRA_INSTALL_DIR`, then run `./gradlew buildExtension` on Linux/macOS or `.\gradlew.bat buildExtension` on Windows. Quote paths containing spaces. The output ZIP and checksum are written to `dist/`.
 
-Requirements: official Ghidra 12.1.4 with JDK 21, or Ghidra 12.2 with JDK 25. The same source and Gradle build are used on Windows, Linux, and macOS. Gradle 9.1.0 satisfies both releases' minimum requirements (8.5 and 9.1 respectively).
+## License and acknowledgments
 
-Windows:
+Copyright 2026 EveryoneEverybody. Xenon360 is licensed under the [Apache License 2.0](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) and [license texts](licenses/) for component licenses and acknowledgments.
 
-```bat
-.\gradlew.bat "-PGHIDRA_INSTALL_DIR=C:\Tools\ghidra_12.2_PUBLIC" buildExtension smokeTest
-```
+Xenon360 is an independent open-source project, not affiliated with, sponsored by, or endorsed by Microsoft, Havok, or Valve Corporation. References to their technologies are for compatibility, identification, and technical research only.
 
-Linux and macOS:
-
-```sh
-./gradlew -PGHIDRA_INSTALL_DIR=/path/to/ghidra_12.2_PUBLIC buildExtension smokeTest
-```
-
-`GHIDRA_INSTALL_DIR` may also be set as an environment variable. Set `JAVA_HOME` to select a JDK. Paths containing spaces must be quoted.
-
-The build prepares the Xenon language, compiles the extension, runs parser/patch/import/Havok tests, and creates `dist/ghidra_12.2_XenonVMX128_0.8.2.zip` with a SHA-256 checksum file. `smokeTest` also installs that ZIP in an isolated settings directory, imports a synthetic XEX, runs native decompilation and VMX p-code, and tests cancellation, ownership, renaming, idempotency, and BSim evidence. It does not change your installed extension or Ghidra projects.
-
-The wrapper downloads Gradle 9.1.0 on first use and verifies its SHA-256 checksum. Later builds use the cached distribution. No Xbox SDK or game files are needed. An offline machine needs the pinned Gradle distribution cached or installed in advance; `--offline` does not download the wrapper distribution for you.
-
-## Tests
-
-`buildExtension` runs the standalone regression tests and checks language preparation with both LF and CRLF line endings. To also import a synthetic XEX in a disposable Ghidra instance, run:
-
-```sh
-./gradlew -PGHIDRA_INSTALL_DIR=/path/to/ghidra buildExtension smokeTest
-```
-
-Use `gradlew.bat` on Windows. The smoke test installs only inside `build/smoke`, verifies automatic helper modeling, and never runs a repair script. Its logs are kept there. This does not replace visual testing of the import dialogs or analysis of real executables.
-
-Optional developer validation scripts accept user-provided files and write results in isolated project directories. They are not required for normal installation. Proprietary validation inputs and private research logs are not included.
-
-VMX tests execute native p-code without emulated userop callbacks. Exact fused floating point, estimate, saturation, and compare-record behavior remains opaque where the language still emits a userop; mnemonic coverage does not imply hardware equivalence.
-
-Version 0.8.1 corrects `lvrx128` decoding where later PowerISA instructions previously occupied Xenon encodings. It also supplies native integer lane semantics for `vpermwi128` and `vrlimi128`. The changes do not add automatic SDK-based function naming. See `docs/0.8.1-engineering.md` for public processor tests and limitations.
-
-Version 0.8.2 extends the existing bounded switch analyzer with guarded, unsigned 16-bit relative tables. It validates the physical register flow, every destination and reachable instruction, and nested supported dispatches before changing anything. Recovery preserves existing function names and owners, rolls back on cancellation, and requests normal analysis of the recovered function. Arbitrary multi-block dispatches and writable tables remain outside this fallback. See `docs/0.8.2-engineering.md` for the comparison and limits.
-
-## Source handling
-
-Evidence exports are local files selected by the user. They contain the imported program's name, hashes, symbols, addresses and analysis findings. Review them before sharing. The extension makes no network requests and contains no telemetry; optional native Ghidra services retain their own settings.
-
-Xenon360 does not execute game code or modify source executables. Patches are reconstructed in memory.
-
-The repository and release package do not include game executables, game code, game symbols, Xbox SDK files, or other proprietary runtime content. Users supply their own XEX/XEXP files and, when available, their own PDB/XDB symbol files.
-
-Signature and hash checks are recorded as diagnostics; older integrity schemes are not treated as modern XEX2 validation.
-
-Third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), with license texts under [licenses](licenses/).
-
-## First import
-
-1. Create a disposable local Ghidra project and choose **File > Import File**.
-2. Select an executable you are authorized to analyze. Confirm **Xenon360 XEX** and the Xenon language shown above.
-3. Leave optional symbol fields empty when no matching PDB/XDB is available. XEXP patches require the matching base executable.
-4. Open the imported program and accept normal Auto Analysis. Keep native switch analysis enabled and allow an adequate decompiler timeout.
-5. Inspect the analysis log and Tools > Xenon360 evidence export. Recovered metadata is evidence, not proof of exact SDK identity or hardware behavior.
-
-## Uninstall and troubleshooting
-
-Close open programs, use **File > Install Extensions** to mark XenonVMX128 for removal, and restart Ghidra. Keep project backups: removing an extension does not undo changes already saved in a project. Reinstall the matching ZIP and restart to reopen projects that require the Xenon language.
-
-- **Version mismatch:** install the ZIP for the exact Ghidra version. Set `JAVA_HOME` to the JDK in the matrix when building.
-- **Loader or language missing:** restart after installation and check for duplicate XenonVMX128 installations. The extension includes its loader; a separate XEX loader is unnecessary.
-- **Optional SDK or symbols unavailable:** ordinary XEX loading, VMX decoding and bounded analysis work without them. Incorrect symbol identities are rejected.
-- **Incomplete decompilation:** inspect warnings, ownership conflicts and unsupported instructions. Increase an inadequate native decompiler budget before retrying a fresh import. Timeouts and unsupported switch shapes may leave control flow incomplete; bounded fallback recovery does not guarantee every switch will be recovered.
-- **Build failure:** preserve `build/smoke` logs and receipts. A headless process exit code alone does not establish test success. Paths containing spaces are supported when quoted.
-
-The source archive contains all extension source, license notices and portable synthetic tests, without Git history or private research inputs. Rebuild in two fresh directories with the same Ghidra distribution and JDK, run `buildExtension smokeTest`, then compare the ZIP SHA-256 values. Archive timestamps and file order are deterministic. Source checkout line endings are defined in `.gitattributes`.
-
-## License
-
-Copyright 2026 EveryoneEverybody.
-
-Xenon360 is licensed under the Apache License 2.0. See [LICENSE](LICENSE). Third-party components and derived material remain under their original licenses as listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Xbox, Xbox 360, Direct3D, and DirectX are trademarks of the Microsoft group of companies. Havok and Havok Physics are trademarks of Havok. Valve and Source are trademarks of Valve Corporation. All other trademarks are the property of their respective owners.
